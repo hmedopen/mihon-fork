@@ -1,15 +1,11 @@
 package eu.kanade.presentation.library.components
 
 import androidx.compose.foundation.pager.PagerState
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryScrollableTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.category.visualName
+import eu.kanade.presentation.components.FoxScrollableTopSectionBar
+import eu.kanade.presentation.components.FoxTopSectionTab
 import tachiyomi.domain.category.model.Category
-import tachiyomi.presentation.core.components.material.TabText
 
 @Composable
 internal fun LibraryTabs(
@@ -18,24 +14,20 @@ internal fun LibraryTabs(
     getItemCountForCategory: (Category) -> Int?,
     onTabItemClick: (Int) -> Unit,
 ) {
-    val currentPageIndex = pagerState.currentPage.coerceAtMost(categories.lastIndex)
-    PrimaryScrollableTabRow(
-        selectedTabIndex = currentPageIndex,
-        edgePadding = 0.dp,
-        containerColor = Color.Transparent,
-    ) {
-        categories.forEachIndexed { index, category ->
-            Tab(
-                selected = currentPageIndex == index,
-                onClick = { onTabItemClick(index) },
-                text = {
-                    TabText(
-                        text = category.visualName,
-                        badgeCount = getItemCountForCategory(category),
-                    )
-                },
-                unselectedContentColor = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+    if (categories.isEmpty()) return
+    val currentPageIndex = pagerState.currentPage.coerceIn(0, categories.lastIndex)
+
+    val tabs = categories.map { category ->
+        FoxTopSectionTab(
+            label = category.visualName,
+            badgeCount = getItemCountForCategory(category),
+        )
     }
+
+    FoxScrollableTopSectionBar(
+        tabs = tabs,
+        selectedIndex = currentPageIndex,
+        onTabSelected = onTabItemClick,
+        visibleSlots = 4,
+    )
 }

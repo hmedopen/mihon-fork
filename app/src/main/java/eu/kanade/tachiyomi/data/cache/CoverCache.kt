@@ -31,6 +31,7 @@ class CoverCache(
     companion object {
         private const val COVERS_DIR = "covers"
         private const val CUSTOM_COVERS_DIR = "covers/custom"
+        private const val BACK_COVERS_DIR = "covers/back"
     }
 
     /**
@@ -39,6 +40,8 @@ class CoverCache(
     private val cacheDir by lazy { getCacheDir(COVERS_DIR) }
 
     private val customCoverCacheDir by lazy { getCacheDir(CUSTOM_COVERS_DIR) }
+
+    private val backCoverCacheDir by lazy { getCacheDir(BACK_COVERS_DIR) }
 
     private val customCoverNames = mutableSetOf<String>()
 
@@ -141,6 +144,33 @@ class CoverCache(
             if (!customCoversIndexed) deletedWhileIndexing.add(file.name)
         }
         return deleted
+    }
+
+    /**
+     * Returns the back cover from cache.
+     */
+    fun getBackCoverFile(mangaId: Long?): File {
+        return File(backCoverCacheDir, DiskUtil.hashKeyForDisk(mangaId.toString()))
+    }
+
+    fun hasBackCover(mangaId: Long?): Boolean {
+        if (mangaId == null) return false
+        val file = getBackCoverFile(mangaId)
+        return file.exists()
+    }
+
+    @Throws(IOException::class)
+    fun setBackCoverToCache(mangaId: Long, inputStream: InputStream) {
+        val file = getBackCoverFile(mangaId)
+        file.parentFile?.mkdirs()
+        file.outputStream().use {
+            inputStream.copyTo(it)
+        }
+    }
+
+    fun deleteBackCover(mangaId: Long?): Boolean {
+        val file = getBackCoverFile(mangaId)
+        return file.exists() && file.delete()
     }
 
     private fun getCacheDir(dir: String): File {

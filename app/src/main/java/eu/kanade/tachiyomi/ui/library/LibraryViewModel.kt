@@ -608,6 +608,10 @@ class LibraryViewModel(
         return libraryPreferences.displayMode.asState(viewModelScope)
     }
 
+    fun setDisplayMode(mode: LibraryDisplayMode) {
+        libraryPreferences.displayMode.set(mode)
+    }
+
     fun toggleDisplayMode() {
         val current = libraryPreferences.displayMode.get()
         val newMode = if (current == LibraryDisplayMode.Coverflow) {

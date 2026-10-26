@@ -60,6 +60,7 @@ import mihon.icons.materialsymbols.rounded.Delete
 import mihon.icons.materialsymbols.rounded.DoneAll
 import mihon.icons.materialsymbols.rounded.Download
 import mihon.icons.materialsymbols.rounded.MoreVert
+import mihon.icons.materialsymbols.rounded.Photo
 import mihon.icons.materialsymbols.rounded.RemoveDone
 import mihon.icons.materialsymbols.rounded.SwapCalls
 import tachiyomi.i18n.MR
@@ -237,6 +238,7 @@ fun LibraryBottomActionMenu(
     onDownloadClicked: ((DownloadAction) -> Unit)?,
     onDeleteClicked: () -> Unit,
     onMigrateClicked: () -> Unit,
+    onEditCoverClicked: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     AnimatedVisibility(
@@ -271,6 +273,15 @@ fun LibraryBottomActionMenu(
                     )
                     .padding(horizontal = 8.dp, vertical = 12.dp),
             ) {
+                if (onEditCoverClicked != null) {
+                    Button(
+                        title = stringResource(MR.strings.action_edit_cover),
+                        icon = MaterialSymbols.Rounded.Photo,
+                        toConfirm = false,
+                        onLongClick = {},
+                        onClick = onEditCoverClicked,
+                    )
+                }
                 Button(
                     title = stringResource(MR.strings.action_move_category),
                     icon = MaterialSymbols.AutoMirroredRounded.Label,

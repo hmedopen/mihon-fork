@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,6 +45,7 @@ import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabNavigator
+import eu.kanade.presentation.components.AuroraLiveBackground
 import eu.kanade.presentation.components.FoxBottomBar
 import eu.kanade.presentation.components.LocalBottomBarPadding
 import eu.kanade.presentation.util.Screen
@@ -65,6 +67,7 @@ import soup.compose.material.motion.animation.materialFadeThroughIn
 import soup.compose.material.motion.animation.materialFadeThroughOut
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.pluralStringResource
+import tachiyomi.presentation.core.util.collectAsState
 
 object HomeScreen : Screen() {
 
@@ -170,32 +173,57 @@ object HomeScreen : Screen() {
                         },
                     ) { contentPadding ->
                         val bottomNavPadding = contentPadding.calculateBottomPadding()
+                        val context = LocalContext.current
+                        val uiPreferences = remember { context.appGraph.uiPreferences }
+                        val liveBackgroundMode by uiPreferences.liveBackgroundMode().collectAsState()
+                        val isMoreTab = tabNavigator.current is MoreTab
+
                         CompositionLocalProvider(
                             LocalBottomBarPadding provides bottomNavPadding,
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .let { modifier ->
-                                        if (tabNavigator.current is LibraryTab) {
-                                            modifier
-                                        } else {
-                                            modifier.padding(bottom = bottomNavPadding)
-                                        }
-                                    },
-                            ) {
-                                AnimatedContent(
-                                    targetState = tabNavigator.current,
-                                    transitionSpec = {
-                                        materialFadeThroughIn(
-                                            initialScale = 1f,
-                                            durationMillis = TabFadeDuration,
-                                        ) togetherWith materialFadeThroughOut(durationMillis = TabFadeDuration)
-                                    },
-                                    label = "tabContent",
+                            val contentModifier = Modifier
+                                .fillMaxSize()
+                                .padding(bottom = bottomNavPadding)
+
+                            if (!isMoreTab) {
+                                AuroraLiveBackground(
+                                    mode = liveBackgroundMode,
+                                    modifier = Modifier.fillMaxSize(),
                                 ) {
-                                    tabNavigator.saveableState(key = "currentTab", it) {
-                                        it.Content()
+                                    Box(modifier = contentModifier) {
+                                        AnimatedContent(
+                                            targetState = tabNavigator.current,
+                                            transitionSpec = {
+                                                materialFadeThroughIn(
+                                                    initialScale = 1f,
+                                                    durationMillis = TabFadeDuration,
+                                                ) togetherWith materialFadeThroughOut(durationMillis = TabFadeDuration)
+                                            },
+                                            label = "tabContent",
+                                        ) {
+                                            tabNavigator.saveableState(key = "currentTab", it) {
+                                                it.Content()
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Box(
+                                    modifier = contentModifier.background(MaterialTheme.colorScheme.background),
+                                ) {
+                                    AnimatedContent(
+                                        targetState = tabNavigator.current,
+                                        transitionSpec = {
+                                            materialFadeThroughIn(
+                                                initialScale = 1f,
+                                                durationMillis = TabFadeDuration,
+                                            ) togetherWith materialFadeThroughOut(durationMillis = TabFadeDuration)
+                                        },
+                                        label = "tabContent",
+                                    ) {
+                                        tabNavigator.saveableState(key = "currentTab", it) {
+                                            it.Content()
+                                        }
                                     }
                                 }
                             }

@@ -1,17 +1,24 @@
 package eu.kanade.presentation.history
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLocale
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import eu.kanade.domain.ui.UiPreferences
@@ -55,76 +62,88 @@ fun HistoryScreen(
         onSearchQueryChange(null)
     }
 
-    Scaffold(
-        topBar = { scrollBehavior ->
-            if (state.searchQuery != null) {
-                SearchToolbar(
-                    titleContent = { AppBarTitle(stringResource(MR.strings.history)) },
-                    searchQuery = state.searchQuery,
-                    onChangeSearchQuery = onSearchQueryChange,
-                    actions = {
-                        AppBarActions(
-                            listOf(
-                                AppBar.Action(
-                                    title = stringResource(MR.strings.pref_clear_history),
-                                    icon = MaterialSymbols.Rounded.DeleteSweep,
-                                    onClick = {
-                                        onDialogChange(HistoryViewModel.Dialog.DeleteAll)
-                                    },
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = { scrollBehavior ->
+                if (state.searchQuery != null) {
+                    SearchToolbar(
+                        titleContent = { AppBarTitle(stringResource(MR.strings.history)) },
+                        searchQuery = state.searchQuery,
+                        onChangeSearchQuery = onSearchQueryChange,
+                        actions = {
+                            AppBarActions(
+                                listOf(
+                                    AppBar.Action(
+                                        title = stringResource(MR.strings.pref_clear_history),
+                                        icon = MaterialSymbols.Rounded.DeleteSweep,
+                                        onClick = {
+                                            onDialogChange(HistoryViewModel.Dialog.DeleteAll)
+                                        },
+                                    ),
                                 ),
-                            ),
-                        )
-                    },
-                    scrollBehavior = scrollBehavior,
-                )
-            } else {
-                SymmetricalHeader(
-                    title = stringResource(MR.strings.history),
-                    leftContent = {
-                        KotoHeaderButton(
-                            icon = MaterialSymbols.Rounded.DeleteSweep,
-                            contentDescription = stringResource(MR.strings.pref_clear_history),
-                            onClick = {
-                                onDialogChange(HistoryViewModel.Dialog.DeleteAll)
-                            },
-                        )
-                    },
-                    rightContent = {
-                        KotoHeaderButton(
-                            icon = MaterialSymbols.Rounded.Search,
-                            contentDescription = stringResource(MR.strings.action_search),
-                            onClick = { onSearchQueryChange("") },
-                        )
-                    },
-                )
-            }
-        },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-    ) { contentPadding ->
-        state.list.let {
-            if (it == null) {
-                LoadingScreen(Modifier.padding(contentPadding))
-            } else if (it.isEmpty()) {
-                val msg = if (!state.searchQuery.isNullOrEmpty()) {
-                    MR.strings.no_results_found
+                            )
+                        },
+                        scrollBehavior = scrollBehavior,
+                    )
                 } else {
-                    MR.strings.information_no_recent_manga
+                    SymmetricalHeader(
+                        title = stringResource(MR.strings.history),
+                        leftContent = {
+                            KotoHeaderButton(
+                                icon = MaterialSymbols.Rounded.DeleteSweep,
+                                contentDescription = stringResource(MR.strings.pref_clear_history),
+                                onClick = {
+                                    onDialogChange(HistoryViewModel.Dialog.DeleteAll)
+                                },
+                            )
+                        },
+                        rightContent = {
+                            KotoHeaderButton(
+                                icon = MaterialSymbols.Rounded.Search,
+                                contentDescription = stringResource(MR.strings.action_search),
+                                onClick = { onSearchQueryChange("") },
+                            )
+                        },
+                    )
                 }
-                EmptyScreen(
-                    stringRes = msg,
-                    modifier = Modifier.padding(contentPadding),
-                )
-            } else {
-                HistoryScreenContent(
-                    history = it,
-                    contentPadding = contentPadding,
-                    onClickCover = { history -> onClickCover(history.mangaId) },
-                    onClickResume = { history -> onClickResume(history.mangaId, history.chapterId) },
-                    onClickDelete = { item -> onDialogChange(HistoryViewModel.Dialog.Delete(item)) },
-                    onClickFavorite = { history -> onClickFavorite(history.mangaId) },
-                )
+            },
+        ) { contentPadding ->
+            state.list.let {
+                if (it == null) {
+                    LoadingScreen(Modifier.padding(contentPadding))
+                } else if (it.isEmpty()) {
+                    val msg = if (!state.searchQuery.isNullOrEmpty()) {
+                        MR.strings.no_results_found
+                    } else {
+                        MR.strings.information_no_recent_manga
+                    }
+                    EmptyScreen(
+                        stringRes = msg,
+                        modifier = Modifier.padding(contentPadding),
+                    )
+                } else {
+                    HistoryScreenContent(
+                        history = it,
+                        contentPadding = contentPadding,
+                        onClickCover = { history -> onClickCover(history.mangaId) },
+                        onClickResume = { history -> onClickResume(history.mangaId, history.chapterId) },
+                        onClickDelete = { item -> onDialogChange(HistoryViewModel.Dialog.Delete(item)) },
+                        onClickFavorite = { history -> onClickFavorite(history.mangaId) },
+                    )
+                }
             }
         }
+
+        // Top-anchored floating notification (Point 6)
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 8.dp, start = 16.dp, end = 16.dp)
+                .zIndex(100f),
+        )
     }
 }
 

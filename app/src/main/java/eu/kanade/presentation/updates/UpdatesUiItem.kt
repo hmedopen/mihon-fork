@@ -111,14 +111,12 @@ internal fun LazyListScope.updatesUiItems(
                     modifier = Modifier.animateItem(),
                     update = updatesItem.update,
                     selected = updatesItem.selected,
-                    readProgress = updatesItem.update.lastPageRead
-                        .takeIf { !updatesItem.update.read && it > 0L }
-                        ?.let {
-                            stringResource(
-                                MR.strings.chapter_progress,
-                                it + 1,
-                            )
-                        },
+                    readProgress = if (!updatesItem.update.read && updatesItem.update.lastPageRead > 0L) {
+                        stringResource(
+                            MR.strings.chapter_progress,
+                            updatesItem.update.lastPageRead + 1,
+                        )
+                    } else null,
                     onLongClick = {
                         onUpdateSelected(updatesItem, !updatesItem.selected, true)
                     },

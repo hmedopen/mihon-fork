@@ -5,19 +5,25 @@ import androidx.activity.compose.ReportDrawnWhen
 import androidx.compose.animation.graphics.res.animatedVectorResource
 import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
 import androidx.compose.animation.graphics.vector.AnimatedImageVector
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import eu.kanade.presentation.components.AuroraLiveBackground
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -33,6 +39,8 @@ import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
+import eu.kanade.presentation.library.components.AuroraModeSelectionDialog
+import eu.kanade.presentation.manga.components.MangaCoverCustomizationDialog
 import eu.kanade.presentation.components.LocalBottomBarPadding
 import eu.kanade.presentation.library.DeleteLibraryMangaDialog
 import eu.kanade.presentation.library.LibrarySettingsDialog
@@ -99,10 +107,9 @@ data object LibraryTab : Tab {
         val settingsViewModel = metroViewModel<LibrarySettingsViewModel>()
         val state by viewModel.state.collectAsStateWithLifecycle()
 
-        val uiPreferences = remember { context.appGraph.uiPreferences }
-        val liveBackgroundMode by uiPreferences.liveBackgroundMode().collectAsState()
-
         val snackbarHostState = remember { SnackbarHostState() }
+        var coverCustomizationManga by remember { mutableStateOf<Manga?>(null) }
+        var showModeSelectionDialog by remember { mutableStateOf(false) }
 
         val onClickRefresh: suspend (Category?) -> Boolean = { category ->
             val started = LibraryUpdateWorker.startNow(context.workManager, category)
@@ -117,10 +124,7 @@ data object LibraryTab : Tab {
             started
         }
 
-        AuroraLiveBackground(
-            mode = liveBackgroundMode,
-            modifier = Modifier.fillMaxSize(),
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
             Scaffold(
                 containerColor = Color.Transparent,
                 topBar = { scrollBehavior ->
@@ -135,7 +139,7 @@ data object LibraryTab : Tab {
                     selectedCount = state.selection.size,
                     title = title,
                     displayMode = displayMode,
-                    onToggleDisplayMode = viewModel::toggleDisplayMode,
+                    onToggleDisplayMode = { showModeSelectionDialog = true },
                     onClickShelfEdit = viewModel::showShelfCustomizationSheet,
                     onClickUnselectAll = viewModel::clearSelection,
                     onClickSelectAll = viewModel::selectAll,
@@ -161,17 +165,13 @@ data object LibraryTab : Tab {
                         viewModel.clearSelection()
                         navigator.push(MigrationConfigScreen(selection))
                     },
+                    onEditCoverClicked = {
+                        coverCustomizationManga = state.selectedManga.firstOrNull()
+                    }.takeIf { state.selection.size == 1 },
                 )
             },
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         ) { contentPadding ->
-            val bottomNavPadding = LocalBottomBarPadding.current
-            val adjustedPadding = remember(contentPadding, bottomNavPadding) {
-                PaddingValues(
-                    top = contentPadding.calculateTopPadding(),
-                    bottom = contentPadding.calculateBottomPadding() + bottomNavPadding,
-                )
-            }
+            val adjustedPadding = remember(contentPadding) { contentPadding }
             when {
                 state.isLoading -> {
                     LoadingScreen(Modifier.padding(adjustedPadding))
@@ -231,7 +231,41 @@ data object LibraryTab : Tab {
                 }
             }
         }
+
+        // Top-anchored floating notification (Point 6)
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 8.dp, start = 16.dp, end = 16.dp)
+                .zIndex(100f),
+        )
     }
+
+        val mangaToCustomize = coverCustomizationManga
+        if (mangaToCustomize != null) {
+            MangaCoverCustomizationDialog(
+                manga = mangaToCustomize,
+                onDismissRequest = { coverCustomizationManga = null },
+            )
+        }
+
+        if (showModeSelectionDialog) {
+            val uiPreferences = remember { context.appGraph.uiPreferences }
+            val liveBackgroundMode by uiPreferences.liveBackgroundMode().collectAsState()
+            val displayMode by viewModel.getDisplayMode()
+            AuroraModeSelectionDialog(
+                currentMode = displayMode,
+                onSelectMode = { newMode ->
+                    viewModel.setDisplayMode(newMode)
+                    showModeSelectionDialog = false
+                },
+                onDismissRequest = { showModeSelectionDialog = false },
+                items = state.libraryData.favorites,
+                liveBackgroundMode = liveBackgroundMode,
+            )
+        }
 
         val onDismissRequest = viewModel::closeDialog
         when (val dialog = state.dialog) {

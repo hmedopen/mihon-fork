@@ -1,11 +1,14 @@
 package eu.kanade.presentation.library.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -51,8 +54,10 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -62,10 +67,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
-import eu.kanade.presentation.components.LocalLiveBackgroundController
 import eu.kanade.presentation.manga.components.MangaCover
 import eu.kanade.tachiyomi.ui.library.LibraryItem
 import kotlinx.coroutines.launch
+import mihon.app.di.appGraph
 import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.roundedfilled.PlayArrow
 import tachiyomi.domain.library.model.LibraryManga
@@ -74,7 +79,7 @@ import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import kotlin.math.absoluteValue
 
-val CoverflowHudHeight = 148.dp
+val CoverflowHudHeight = 164.dp
 val CoverflowTitleHeight = 52.dp
 
 /**
@@ -107,18 +112,13 @@ fun AuroraCoverflow(
 
     val coroutineScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val coverCache = remember { context.appGraph.coverCache }
 
-    val bgController = LocalLiveBackgroundController.current
-    DisposableEffect(pagerState, bgController) {
-        bgController?.scrollOffsetProvider = {
-            pagerState.currentPage + pagerState.currentPageOffsetFraction
-        }
-        onDispose {
-            if (bgController?.scrollOffsetProvider != null) {
-                bgController.scrollOffsetProvider = null
-            }
-        }
-    }
+    // Aurora zoom gesture state (-1f for full zoom out with 5 covers, +1f for zoom in / 3D back cover flip)
+    val zoomAnimatable = remember { Animatable(0f) }
+
+    // Background remains fixed across swipes and shelf changes (Point 1)
 
     val flingBehavior = PagerDefaults.flingBehavior(
         state = pagerState,
@@ -160,7 +160,59 @@ fun AuroraCoverflow(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(coverflowAreaHeight)
-                .align(Alignment.TopCenter),
+                .align(Alignment.TopCenter)
+                // Aurora Gestures (Point 8):
+                // Pull down to zoom in / 3D flip; Pull up to zoom out (showing 5 covers);
+                // clicking covers while zoomed out centers them smoothly without resetting zoom until release.
+                .pointerInput(Unit) {
+                    val touchSlop = viewConfiguration.touchSlop
+                    val dragThreshold = 180.dp.toPx()
+
+                    awaitEachGesture {
+                        val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+                        var totalDy = 0f
+                        var totalDx = 0f
+                        var isVerticalDrag = false
+                        val activePointerId = down.id
+
+                        while (true) {
+                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                            val pointer = event.changes.firstOrNull { it.id == activePointerId } ?: break
+                            if (!pointer.pressed) break
+
+                            val dy = pointer.position.y - pointer.previousPosition.y
+                            val dx = pointer.position.x - pointer.previousPosition.x
+                            totalDy += dy
+                            totalDx += dx
+
+                            if (!isVerticalDrag) {
+                                if (totalDy.absoluteValue > touchSlop && totalDy.absoluteValue > totalDx.absoluteValue * 1.2f) {
+                                    isVerticalDrag = true
+                                    pointer.consume()
+                                }
+                            }
+
+                            if (isVerticalDrag) {
+                                pointer.consume()
+                                val targetZoom = (totalDy / dragThreshold).coerceIn(-1f, 1f)
+                                coroutineScope.launch {
+                                    zoomAnimatable.snapTo(targetZoom)
+                                }
+                            }
+                        }
+
+                        // Released: spring back to normal!
+                        coroutineScope.launch {
+                            zoomAnimatable.animateTo(
+                                targetValue = 0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioLowBouncy,
+                                    stiffness = 320f,
+                                ),
+                            )
+                        }
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
             HorizontalPager(
@@ -185,6 +237,11 @@ fun AuroraCoverflow(
                     lastModified = manga.coverLastModified,
                 )
 
+                val hasBackCover = remember(manga.id) { coverCache.hasBackCover(manga.id) }
+                val backCoverFile = remember(manga.id, hasBackCover) {
+                    if (hasBackCover) coverCache.getBackCoverFile(manga.id) else null
+                }
+
                 // Distance from center page integer for stable z-index layering
                 val pageDelta = (pagerState.currentPage - page).absoluteValue.coerceIn(0, 3)
 
@@ -195,28 +252,77 @@ fun AuroraCoverflow(
                             // Render-phase continuous 3D transforms: Zero recomposition overhead
                             val liveOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
                             val liveAbsOffset = liveOffset.absoluteValue.coerceIn(0f, 3f)
+                            val zoom = zoomAnimatable.value
+                            val zoomIn = zoom.coerceIn(0f, 1f)
+                            val zoomOut = (-zoom).coerceIn(0f, 1f)
 
-                            this.cameraDistance = 16f * density.density
+                            this.cameraDistance = 18f * density.density
 
                             // 3D Y-Rotation: tilt inward toward center spine
                             val clampedOffset = liveOffset.coerceIn(-1f, 1f)
                             val easeFraction = FastOutSlowInEasing.transform(clampedOffset.absoluteValue)
-                            this.rotationY = (if (clampedOffset >= 0f) 1f else -1f) * easeFraction * 38f
+                            val normalRotationY = (if (clampedOffset >= 0f) 1f else -1f) * easeFraction * (38f - 14f * zoomOut)
 
-                            // Scale: center hero is 1.0f, down to 0.78f at abs==1, 0.68f at abs>=2
-                            val scale = when {
+                            if (liveAbsOffset < 0.5f && zoomIn > 0f) {
+                                if (hasBackCover) {
+                                    // 3D Card Flip to show back cover (Point 8.5)
+                                    this.rotationY = normalRotationY * (1f - zoomIn) + (180f * zoomIn)
+                                } else {
+                                    // Standard zoom in: keep facing camera
+                                    this.rotationY = normalRotationY * (1f - zoomIn * 0.5f)
+                                }
+                            } else {
+                                this.rotationY = normalRotationY
+                            }
+
+                            // Scale:
+                            // Normal mode: center is 1.0f, down to 0.78f, then 0.68f
+                            // Zoom-out mode (Point 8): compresses so 5 covers are in view
+                            val normalScale = when {
                                 liveAbsOffset <= 1f -> 1.0f - 0.22f * liveAbsOffset
                                 liveAbsOffset <= 2f -> 0.78f - 0.10f * (liveAbsOffset - 1f)
                                 else -> 0.68f
                             }
+                            val zoomedOutScale = when {
+                                liveAbsOffset <= 1f -> 0.70f - 0.16f * liveAbsOffset
+                                liveAbsOffset <= 2f -> 0.54f - 0.10f * (liveAbsOffset - 1f)
+                                else -> 0.44f
+                            }
+                            var scale = normalScale * (1f - zoomOut) + zoomedOutScale * zoomOut
+
+                            if (zoomIn > 0f) {
+                                if (liveAbsOffset < 0.5f) {
+                                    scale = if (hasBackCover) {
+                                        normalScale * (1.0f + 0.18f * zoomIn)
+                                    } else {
+                                        normalScale * (1.0f + 0.35f * zoomIn)
+                                    }
+                                } else {
+                                    scale = normalScale * (1.0f - 0.22f * zoomIn)
+                                }
+                            }
                             this.scaleX = scale
                             this.scaleY = scale
 
-                            // Horizontal compression: pull flanking cards slightly closer toward center
-                            this.translationX = liveOffset * cardWidthPx * 0.22f
+                            // Horizontal compression: pull flanking cards into view for 5 covers
+                            val compression = 0.22f + 0.24f * zoomOut - 0.08f * zoomIn
+                            this.translationX = liveOffset * cardWidthPx * compression
 
-                            // Depth dimming: center at 1.0f, dimming down to 0.55f at outer edges
-                            this.alpha = 1.0f - (1.0f - 0.55f) * (liveAbsOffset / 2f).coerceIn(0f, 1f)
+                            // Vertical descent when zoomed in
+                            if (zoomIn > 0f && liveAbsOffset < 0.5f) {
+                                this.translationY = with(density) { 14.dp.toPx() } * zoomIn
+                            } else {
+                                this.translationY = 0f
+                            }
+
+                            // Depth dimming & visibility: all 5 covers are bright and visible when zoomed out
+                            val normalAlpha = 1.0f - (1.0f - 0.55f) * (liveAbsOffset / 2f).coerceIn(0f, 1f)
+                            val zoomedOutAlpha = 1.0f - 0.15f * (liveAbsOffset / 2f).coerceIn(0f, 1f)
+                            var cardAlpha = normalAlpha * (1f - zoomOut) + zoomedOutAlpha * zoomOut
+                            if (zoomIn > 0f && liveAbsOffset >= 0.5f) {
+                                cardAlpha *= (1f - 0.65f * zoomIn)
+                            }
+                            this.alpha = cardAlpha
                         }
                         .width(cardWidth),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -247,28 +353,45 @@ fun AuroraCoverflow(
                                     style = Stroke(width = strokeWidth),
                                 )
                             }
+                            // Responsive, instant tap handling (Point 7 & Point 8)
                             .pointerInput(page, pagerState.currentPage) {
                                 detectTapGestures(
                                     onTap = {
-                                        if (pagerState.isScrollInProgress) return@detectTapGestures
+                                        val liveOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                                        val isCenter = liveOffset.absoluteValue < 0.45f
+                                        val isZoomedOut = zoomAnimatable.value < -0.15f
 
-                                        if (page == pagerState.currentPage) {
-                                            onClickManga(item.libraryManga)
-                                        } else {
+                                        if (isZoomedOut) {
+                                            // Point 8: While zoomed out, clicking any cover moves it to center smoothly
+                                            // without breaking the zoom out while held!
                                             coroutineScope.launch {
                                                 pagerState.animateScrollToPage(
                                                     page = page,
                                                     animationSpec = spring(
                                                         dampingRatio = Spring.DampingRatioNoBouncy,
-                                                        stiffness = Spring.StiffnessLow,
+                                                        stiffness = 380f,
+                                                    ),
+                                                )
+                                            }
+                                        } else if (isCenter) {
+                                            // Point 7: Center cover opens immediately!
+                                            onClickManga(item.libraryManga)
+                                        } else {
+                                            // Point 7: Right/left flanking cover brings to middle right away with no waiting and smoothly!
+                                            coroutineScope.launch {
+                                                pagerState.animateScrollToPage(
+                                                    page = page,
+                                                    animationSpec = spring(
+                                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                                        stiffness = 380f,
                                                     ),
                                                 )
                                             }
                                         }
                                     },
                                     onLongPress = {
-                                        if (pagerState.isScrollInProgress) return@detectTapGestures
-                                        if (page == pagerState.currentPage) {
+                                        val liveOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                                        if (liveOffset.absoluteValue < 0.45f) {
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             onLongClickManga(item.libraryManga)
                                         }
@@ -276,12 +399,33 @@ fun AuroraCoverflow(
                                 )
                             },
                     ) {
-                        MangaCover.Book(
-                            data = coverData,
-                            modifier = Modifier.fillMaxSize(),
-                            contentDescription = manga.title,
-                            shape = cardShape,
-                        )
+                        val liveOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                        val zoomIn = zoomAnimatable.value.coerceIn(0f, 1f)
+                        val isFlippedToBack = hasBackCover && liveOffset.absoluteValue < 0.5f && (180f * zoomIn) >= 90f
+
+                        if (isFlippedToBack && backCoverFile != null) {
+                            // Back cover view (Point 8.5)
+                            AsyncImage(
+                                model = backCoverFile,
+                                contentDescription = "${manga.title} back cover",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(cardShape)
+                                    .graphicsLayer {
+                                        // Counteract parent Y-flip so image is right-side up
+                                        rotationY = 180f
+                                    },
+                                contentScale = ContentScale.Crop,
+                            )
+                        } else {
+                            // Front cover view
+                            MangaCover.Book(
+                                data = coverData,
+                                modifier = Modifier.fillMaxSize(),
+                                contentDescription = manga.title,
+                                shape = cardShape,
+                            )
+                        }
                     }
 
                     // Spacer between cover and reflection
@@ -299,7 +443,8 @@ fun AuroraCoverflow(
                                 compositingStrategy = CompositingStrategy.Offscreen
                                 val liveOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
                                 val curAbs = liveOffset.absoluteValue.coerceIn(0f, 3f)
-                                alpha = 0.35f * (1f - (curAbs * 0.4f).coerceIn(0f, 1f)) * hudAlpha
+                                val zoomIn = zoomAnimatable.value.coerceIn(0f, 1f)
+                                alpha = 0.35f * (1f - (curAbs * 0.4f).coerceIn(0f, 1f)) * hudAlpha * (1f - zoomIn)
                             }
                             .drawWithContent {
                                 drawContent()
@@ -335,12 +480,14 @@ fun AuroraCoverflow(
         val activeIndex = pagerState.currentPage.coerceIn(0, items.lastIndex)
         val currentItem = items.getOrNull(activeIndex)
 
+        val zoomIn = zoomAnimatable.value.coerceIn(0f, 1f)
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(CoverflowHudHeight)
                 .align(Alignment.BottomCenter)
-                .graphicsLayer { alpha = hudAlpha }
+                .graphicsLayer { alpha = hudAlpha * (1f - zoomIn * 0.65f) }
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 10.dp),
             contentAlignment = Alignment.BottomCenter,
@@ -427,7 +574,8 @@ fun AuroraCoverflow(
 
                     val statTextStyle = MaterialTheme.typography.bodyMedium.copy(
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
+                        lineHeight = 17.sp,
                         color = if (isDark) Color.White.copy(alpha = 0.88f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.88f),
                         shadow = Shadow(
                             color = if (isDark) Color.Black.copy(alpha = 0.70f) else Color.White.copy(alpha = 0.70f),
