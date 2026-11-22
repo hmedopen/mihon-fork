@@ -3,6 +3,8 @@ package eu.kanade.presentation.history
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -16,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -26,6 +29,7 @@ import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.AppBarTitle
 import eu.kanade.presentation.components.KotoHeaderButton
+import eu.kanade.presentation.components.LocalBottomBarPadding
 import eu.kanade.presentation.components.SearchToolbar
 import eu.kanade.presentation.components.SymmetricalHeader
 import eu.kanade.presentation.components.relativeDateText
@@ -164,8 +168,19 @@ private fun HistoryScreenContent(
         UiPreferences.timeFormat(timeFormat, locale.platformLocale, is24HourSystem)
     }
 
+    val effectivePadding = PaddingValues(
+        start = contentPadding.calculateStartPadding(LocalLayoutDirection.current),
+        top = contentPadding.calculateTopPadding(),
+        end = contentPadding.calculateEndPadding(LocalLayoutDirection.current),
+        bottom = if (contentPadding.calculateBottomPadding() > 0.dp) {
+            contentPadding.calculateBottomPadding()
+        } else {
+            8.dp
+        },
+    )
+
     FastScrollLazyColumn(
-        contentPadding = contentPadding,
+        contentPadding = effectivePadding,
     ) {
         items(
             items = history,

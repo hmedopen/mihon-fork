@@ -39,8 +39,10 @@ import mihon.icons.materialsymbols.MaterialSymbols
 import mihon.icons.materialsymbols.rounded.FilterList
 import mihon.icons.materialsymbols.rounded.FlipToBack
 import mihon.icons.materialsymbols.rounded.GridView
+import mihon.icons.materialsymbols.rounded.MobileRotate
 import mihon.icons.materialsymbols.rounded.Search
 import mihon.icons.materialsymbols.rounded.SelectAll
+import mihon.icons.materialsymbols.rounded.SortByAlpha
 import mihon.icons.materialsymbols.rounded.Tune
 import mihon.icons.materialsymbols.rounded.ViewCarousel
 import tachiyomi.domain.library.model.LibraryDisplayMode
@@ -133,10 +135,15 @@ private fun LibrarySymmetricalToolbar(
                 onClick = onClickShelfEdit,
             )
 
-            // Button 2: Mode Switch Button (Inner Left - Coverflow vs Grid)
-            val isCoverflow = displayMode == LibraryDisplayMode.Coverflow
+            // Button 2: Mode Switch Button (Inner Left)
+            val modeIcon = when (displayMode) {
+                LibraryDisplayMode.Coverflow -> MaterialSymbols.Rounded.ViewCarousel
+                LibraryDisplayMode.CarouselRing -> MaterialSymbols.Rounded.MobileRotate
+                LibraryDisplayMode.AlphabeticRail -> MaterialSymbols.Rounded.SortByAlpha
+                else -> MaterialSymbols.Rounded.GridView
+            }
             KotoHeaderButton(
-                icon = if (isCoverflow) MaterialSymbols.Rounded.ViewCarousel else MaterialSymbols.Rounded.GridView,
+                icon = modeIcon,
                 contentDescription = stringResource(MR.strings.action_display_mode),
                 onClick = onToggleDisplayMode,
             )

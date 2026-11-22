@@ -149,68 +149,53 @@ object HomeScreen : Screen() {
                         }
                     }
                 } else {
-                    Scaffold(
-                        containerColor = Color.Transparent,
-                        bottomBar = {
-                            AnimatedVisibility(
-                                visible = showBottomNav,
-                                enter = slideInVertically { it } + fadeIn(),
-                                exit = slideOutVertically { it } + fadeOut(),
-                            ) {
-                                FoxBottomBar(
-                                    tabs = TABS,
-                                    currentTab = tabNavigator.current,
-                                    onTabSelected = { tab ->
-                                        if (tabNavigator.current::class == tab::class) {
-                                            scope.launch { tab.onReselect(navigator) }
-                                        } else {
-                                            tabNavigator.current = tab
-                                        }
-                                    },
-                                    tabBadge = { tab -> tabBadge(tab) },
-                                )
-                            }
-                        },
-                    ) { contentPadding ->
-                        val bottomNavPadding = contentPadding.calculateBottomPadding()
-                        val context = LocalContext.current
-                        val uiPreferences = remember { context.appGraph.uiPreferences }
-                        val liveBackgroundMode by uiPreferences.liveBackgroundMode().collectAsState()
-                        val isMoreTab = tabNavigator.current is MoreTab
+                    val context = LocalContext.current
+                    val uiPreferences = remember { context.appGraph.uiPreferences }
+                    val liveBackgroundMode by uiPreferences.liveBackgroundMode().collectAsState()
+                    val isMoreTab = tabNavigator.current is MoreTab
 
-                        CompositionLocalProvider(
-                            LocalBottomBarPadding provides bottomNavPadding,
-                        ) {
-                            val contentModifier = Modifier
-                                .fillMaxSize()
-                                .padding(bottom = bottomNavPadding)
-
-                            if (!isMoreTab) {
-                                AuroraLiveBackground(
-                                    mode = liveBackgroundMode,
-                                    modifier = Modifier.fillMaxSize(),
+                    val homeScaffold = @Composable {
+                        Scaffold(
+                            containerColor = Color.Transparent,
+                            bottomBar = {
+                                AnimatedVisibility(
+                                    visible = showBottomNav,
+                                    enter = slideInVertically { it } + fadeIn(),
+                                    exit = slideOutVertically { it } + fadeOut(),
                                 ) {
-                                    Box(modifier = contentModifier) {
-                                        AnimatedContent(
-                                            targetState = tabNavigator.current,
-                                            transitionSpec = {
-                                                materialFadeThroughIn(
-                                                    initialScale = 1f,
-                                                    durationMillis = TabFadeDuration,
-                                                ) togetherWith materialFadeThroughOut(durationMillis = TabFadeDuration)
-                                            },
-                                            label = "tabContent",
-                                        ) {
-                                            tabNavigator.saveableState(key = "currentTab", it) {
-                                                it.Content()
+                                    FoxBottomBar(
+                                        tabs = TABS,
+                                        currentTab = tabNavigator.current,
+                                        onTabSelected = { tab ->
+                                            if (tabNavigator.current::class == tab::class) {
+                                                scope.launch { tab.onReselect(navigator) }
+                                            } else {
+                                                tabNavigator.current = tab
                                             }
+                                        },
+                                        tabBadge = { tab -> tabBadge(tab) },
+                                    )
+                                }
+                            },
+                        ) { contentPadding ->
+                            val bottomNavPadding = contentPadding.calculateBottomPadding()
+                            // Align minimum list content area with the top of inactive nav cells (56.dp + insets)
+                            val navBarLineLimit = (bottomNavPadding - 18.dp).coerceAtLeast(0.dp)
+
+                            CompositionLocalProvider(
+                                LocalBottomBarPadding provides navBarLineLimit,
+                            ) {
+                                val contentModifier = Modifier
+                                    .fillMaxSize()
+                                    .let { modifier ->
+                                        if (tabNavigator.current is LibraryTab) {
+                                            modifier
+                                        } else {
+                                            modifier.padding(bottom = navBarLineLimit)
                                         }
                                     }
-                                }
-                            } else {
-                                Box(
-                                    modifier = contentModifier.background(MaterialTheme.colorScheme.background),
-                                ) {
+
+                                Box(modifier = contentModifier) {
                                     AnimatedContent(
                                         targetState = tabNavigator.current,
                                         transitionSpec = {
@@ -227,6 +212,23 @@ object HomeScreen : Screen() {
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    if (!isMoreTab) {
+                        AuroraLiveBackground(
+                            mode = liveBackgroundMode,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            homeScaffold()
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background),
+                        ) {
+                            homeScaffold()
                         }
                     }
                 }

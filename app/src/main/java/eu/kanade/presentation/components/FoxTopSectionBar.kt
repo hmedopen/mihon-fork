@@ -2,6 +2,9 @@ package eu.kanade.presentation.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
@@ -111,34 +114,25 @@ fun FoxTopSectionBar(
     selectedIndex: Int,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    positionProvider: (() -> Float)? = null,
     colors: FoxTopSectionBarColors = FoxTopSectionBarDefaults.colors(),
     enabled: Boolean = true,
 ) {
     if (tabs.isEmpty()) return
 
-    val targetPosition = selectedIndex.toFloat()
-    val animatable = remember { Animatable(targetPosition) }
-    var isAnimating by remember { mutableStateOf(false) }
-
-    LaunchedEffect(targetPosition) {
-        val diff = abs(targetPosition - animatable.value)
-        if (diff > 0.05f) {
-            isAnimating = true
-            animatable.animateTo(
-                targetValue = targetPosition,
-                animationSpec = tween(
-                    durationMillis = 180,
-                    easing = FastOutSlowInEasing,
-                ),
-            )
-            isAnimating = false
-        } else {
-            animatable.snapTo(targetPosition)
-            isAnimating = false
-        }
+    val animatedPosition = if (positionProvider != null) {
+        positionProvider()
+    } else {
+        val anim by animateFloatAsState(
+            targetValue = selectedIndex.toFloat(),
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
+            label = "FoxTopSectionBarPosition",
+        )
+        anim
     }
-
-    val animatedPosition = if (isAnimating) animatable.value else targetPosition
 
     Row(
         modifier = modifier
@@ -195,6 +189,7 @@ fun FoxScrollableTopSectionBar(
     selectedIndex: Int,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    positionProvider: (() -> Float)? = null,
     colors: FoxTopSectionBarColors = FoxTopSectionBarDefaults.colors(),
     visibleSlots: Int = 4,
     enabled: Boolean = true,
@@ -223,29 +218,19 @@ fun FoxScrollableTopSectionBar(
             )
         }
 
-        val targetPosition = selectedIndex.toFloat()
-        val animatable = remember { Animatable(targetPosition) }
-        var isAnimating by remember { mutableStateOf(false) }
-
-        LaunchedEffect(targetPosition) {
-            val diff = abs(targetPosition - animatable.value)
-            if (diff > 0.05f) {
-                isAnimating = true
-                animatable.animateTo(
-                    targetValue = targetPosition,
-                    animationSpec = tween(
-                        durationMillis = 200,
-                        easing = FastOutSlowInEasing,
-                    ),
-                )
-                isAnimating = false
-            } else {
-                animatable.snapTo(targetPosition)
-                isAnimating = false
-            }
+        val animatedPosition = if (positionProvider != null) {
+            positionProvider()
+        } else {
+            val anim by animateFloatAsState(
+                targetValue = selectedIndex.toFloat(),
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+                label = "FoxScrollableTopSectionBarPosition",
+            )
+            anim
         }
-
-        val animatedPosition = if (isAnimating) animatable.value else targetPosition
 
         Row(
             modifier = Modifier

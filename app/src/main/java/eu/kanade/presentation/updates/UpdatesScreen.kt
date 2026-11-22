@@ -2,6 +2,9 @@ package eu.kanade.presentation.updates
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,11 +21,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastAny
 import eu.kanade.presentation.components.AppBar
 import eu.kanade.presentation.components.AppBarActions
 import eu.kanade.presentation.components.KotoHeaderButton
+import eu.kanade.presentation.components.LocalBottomBarPadding
 import eu.kanade.presentation.components.SymmetricalHeader
 import eu.kanade.presentation.manga.components.ChapterDownloadAction
 import eu.kanade.presentation.manga.components.MangaBottomActionMenu
@@ -74,6 +81,7 @@ fun UpdateScreen(
     val scope = rememberCoroutineScope()
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = { scrollBehavior ->
             UpdatesAppBar(
                 onCalendarClicked = { onCalendarClicked() },
@@ -133,8 +141,18 @@ fun UpdateScreen(
                             )
                         }
                     } else {
+                        val effectivePadding = PaddingValues(
+                            start = contentPadding.calculateStartPadding(LocalLayoutDirection.current),
+                            top = contentPadding.calculateTopPadding(),
+                            end = contentPadding.calculateEndPadding(LocalLayoutDirection.current),
+                            bottom = if (contentPadding.calculateBottomPadding() > 0.dp) {
+                                contentPadding.calculateBottomPadding()
+                            } else {
+                                8.dp
+                            },
+                        )
                         FastScrollLazyColumn(
-                            contentPadding = contentPadding,
+                            contentPadding = effectivePadding,
                         ) {
                             updatesLastUpdatedItem(lastUpdated)
 

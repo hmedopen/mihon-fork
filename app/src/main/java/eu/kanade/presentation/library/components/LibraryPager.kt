@@ -46,6 +46,7 @@ fun LibraryPager(
     HorizontalPager(
         modifier = Modifier.fillMaxSize(),
         state = state,
+        userScrollEnabled = false,
         verticalAlignment = Alignment.Top,
     ) { page ->
         if (page !in ((state.currentPage - 1)..(state.currentPage + 1))) {
@@ -66,7 +67,12 @@ fun LibraryPager(
         }
 
         val displayMode by getDisplayMode(page)
-        val columns by if (displayMode != LibraryDisplayMode.List && displayMode != LibraryDisplayMode.Coverflow) {
+        val columns by if (
+            displayMode != LibraryDisplayMode.List &&
+            displayMode != LibraryDisplayMode.Coverflow &&
+            displayMode != LibraryDisplayMode.CarouselRing &&
+            displayMode != LibraryDisplayMode.AlphabeticRail
+        ) {
             val configuration = LocalConfiguration.current
             val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -78,7 +84,11 @@ fun LibraryPager(
         val onClickManga: (LibraryManga) -> Unit = { onClickManga(category, it) }
         val onLongClickManga: (LibraryManga) -> Unit = { onLongClickManga(category, it) }
 
-        val isGridMode = displayMode != LibraryDisplayMode.Coverflow && displayMode != LibraryDisplayMode.List
+        val isGridMode = displayMode != LibraryDisplayMode.Coverflow &&
+            displayMode != LibraryDisplayMode.CarouselRing &&
+            displayMode != LibraryDisplayMode.AlphabeticRail &&
+            displayMode != LibraryDisplayMode.List
+
         when (displayMode) {
             LibraryDisplayMode.List -> {
                 LibraryList(
@@ -87,6 +97,30 @@ fun LibraryPager(
                     selection = selection,
                     onClick = onClickManga,
                     onLongClick = onLongClickManga,
+                    onClickContinueReading = onClickContinueReading,
+                    searchQuery = searchQuery,
+                    onGlobalSearchClicked = onGlobalSearchClicked,
+                )
+            }
+            LibraryDisplayMode.CarouselRing -> {
+                CarouselRingDisplay(
+                    items = items,
+                    contentPadding = contentPadding,
+                    selection = selection,
+                    onClickManga = onClickManga,
+                    onLongClickManga = onLongClickManga,
+                    onClickContinueReading = onClickContinueReading,
+                    searchQuery = searchQuery,
+                    onGlobalSearchClicked = onGlobalSearchClicked,
+                )
+            }
+            LibraryDisplayMode.AlphabeticRail -> {
+                AlphabeticRailDisplay(
+                    items = items,
+                    contentPadding = contentPadding,
+                    selection = selection,
+                    onClickManga = onClickManga,
+                    onLongClickManga = onLongClickManga,
                     onClickContinueReading = onClickContinueReading,
                     searchQuery = searchQuery,
                     onGlobalSearchClicked = onGlobalSearchClicked,

@@ -131,15 +131,14 @@ fun AuroraCoverflow(
     )
 
     BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(contentPadding),
+        modifier = modifier.fillMaxSize(),
     ) {
         val screenWidth = maxWidth
         val screenHeight = maxHeight
+        val bottomBarPadding = contentPadding.calculateBottomPadding()
 
         // Dedicated fixed Coverflow carousel area height: 100% decoupled from bottom HUD content
-        val coverflowAreaHeight = (screenHeight - CoverflowHudHeight).coerceAtLeast(200.dp)
+        val coverflowAreaHeight = (screenHeight - CoverflowHudHeight - bottomBarPadding).coerceAtLeast(200.dp)
 
         // Aspect ratio 2f / 3f (height = width * 1.5f).
         // Total cover height with reflection = cardHeight + 6.dp + (cardHeight * 0.42f) = cardHeight * 1.42f + 6.dp.
@@ -151,6 +150,7 @@ fun AuroraCoverflow(
 
         val density = LocalDensity.current
         val cardWidthPx = with(density) { cardWidth.toPx() }
+        val cardHeightPx = with(density) { cardHeight.toPx() }
         val primaryColor = MaterialTheme.colorScheme.primary
         val cardCornerRadius = 12.dp
         val cardShape = RoundedCornerShape(cardCornerRadius)
@@ -166,7 +166,7 @@ fun AuroraCoverflow(
                 // clicking covers while zoomed out centers them smoothly without resetting zoom until release.
                 .pointerInput(Unit) {
                     val touchSlop = viewConfiguration.touchSlop
-                    val dragThreshold = 180.dp.toPx()
+                    val dragThreshold = 240.dp.toPx()
 
                     awaitEachGesture {
                         val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
@@ -258,10 +258,10 @@ fun AuroraCoverflow(
 
                             this.cameraDistance = 18f * density.density
 
-                            // 3D Y-Rotation: tilt inward toward center spine
+                            // 3D Y-Rotation: tilt inward toward center spine; completely flat (0 deg) when zoomed out
                             val clampedOffset = liveOffset.coerceIn(-1f, 1f)
                             val easeFraction = FastOutSlowInEasing.transform(clampedOffset.absoluteValue)
-                            val normalRotationY = (if (clampedOffset >= 0f) 1f else -1f) * easeFraction * (38f - 14f * zoomOut)
+                            val normalRotationY = (if (clampedOffset >= 0f) 1f else -1f) * easeFraction * 38f * (1f - zoomOut)
 
                             if (liveAbsOffset < 0.5f && zoomIn > 0f) {
                                 if (hasBackCover) {
@@ -277,40 +277,40 @@ fun AuroraCoverflow(
 
                             // Scale:
                             // Normal mode: center is 1.0f, down to 0.78f, then 0.68f
-                            // Zoom-out mode (Point 8): compresses so 5 covers are in view
+                            // Zoom-out mode: all 5 covers become the exact same size (0.58f)
                             val normalScale = when {
                                 liveAbsOffset <= 1f -> 1.0f - 0.22f * liveAbsOffset
                                 liveAbsOffset <= 2f -> 0.78f - 0.10f * (liveAbsOffset - 1f)
                                 else -> 0.68f
                             }
-                            val zoomedOutScale = when {
-                                liveAbsOffset <= 1f -> 0.70f - 0.16f * liveAbsOffset
-                                liveAbsOffset <= 2f -> 0.54f - 0.10f * (liveAbsOffset - 1f)
-                                else -> 0.44f
-                            }
+                            val zoomedOutScale = 0.58f
                             var scale = normalScale * (1f - zoomOut) + zoomedOutScale * zoomOut
 
                             if (zoomIn > 0f) {
                                 if (liveAbsOffset < 0.5f) {
                                     scale = if (hasBackCover) {
-                                        normalScale * (1.0f + 0.18f * zoomIn)
-                                    } else {
                                         normalScale * (1.0f + 0.35f * zoomIn)
+                                    } else {
+                                        normalScale * (1.0f + 0.48f * zoomIn)
                                     }
                                 } else {
-                                    scale = normalScale * (1.0f - 0.22f * zoomIn)
+                                    scale = normalScale * (1.0f - 0.35f * zoomIn)
                                 }
                             }
                             this.scaleX = scale
                             this.scaleY = scale
 
                             // Horizontal compression: pull flanking cards into view for 5 covers
-                            val compression = 0.22f + 0.24f * zoomOut - 0.08f * zoomIn
+                            val compression = 0.22f + 0.36f * zoomOut - 0.08f * zoomIn
                             this.translationX = liveOffset * cardWidthPx * compression
 
-                            // Vertical descent when zoomed in
+                            // Vertical descent when zoomed in:
+                            // Center-scaling expands the card upwards by (scale - normalScale) * cardHeightPx / 2.
+                            // We offset this upward expansion plus add downward descent clearance so the top edge
+                            // of the card descends safely below any top bars / clipping boundaries, showing the full cover.
                             if (zoomIn > 0f && liveAbsOffset < 0.5f) {
-                                this.translationY = with(density) { 14.dp.toPx() } * zoomIn
+                                val upwardScaleExpansion = (scale - normalScale) * cardHeightPx / 2f
+                                this.translationY = upwardScaleExpansion + with(density) { 36.dp.toPx() } * zoomIn
                             } else {
                                 this.translationY = 0f
                             }
@@ -479,187 +479,19 @@ fun AuroraCoverflow(
         // 2. Fixed Bottom Aurora HUD (Completely decoupled from Carousel height)
         val activeIndex = pagerState.currentPage.coerceIn(0, items.lastIndex)
         val currentItem = items.getOrNull(activeIndex)
-
         val zoomIn = zoomAnimatable.value.coerceIn(0f, 1f)
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(CoverflowHudHeight)
-                .align(Alignment.BottomCenter)
-                .graphicsLayer { alpha = hudAlpha * (1f - zoomIn * 0.65f) }
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 10.dp),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            val isDark = isSystemInDarkTheme()
-
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Bottom,
-            ) {
-                // Manga Title: Fixed height so 1-line or 2-lines never shift the layout
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(CoverflowTitleHeight)
-                        .padding(horizontal = 8.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = currentItem?.libraryManga?.manga?.title.orEmpty(),
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontSize = 19.sp,
-                            fontWeight = FontWeight.Bold,
-                            lineHeight = 24.sp,
-                            color = if (isDark) Color.White else MaterialTheme.colorScheme.onBackground,
-                            shadow = Shadow(
-                                color = if (isDark) Color.Black.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.75f),
-                                blurRadius = 5f,
-                            ),
-                        ),
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clickable(
-                            interactionSource = null,
-                            indication = null,
-                            enabled = currentItem != null,
-                            onClick = { currentItem?.let { onClickManga(it.libraryManga) } },
-                        ),
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(3.dp))
-
-                // Position Counter: Tabular Numerals positioned lower, right below title
-                Text(
-                    text = "${activeIndex + 1} / ${items.size}",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        color = if (isDark) Color.White.copy(alpha = 0.55f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.60f),
-                        fontWeight = FontWeight.SemiBold,
-                        fontFeatureSettings = "tnum",
-                        letterSpacing = 0.5.sp,
-                        shadow = Shadow(
-                            color = if (isDark) Color.Black.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.5f),
-                            blurRadius = 3f,
-                        ),
-                    ),
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Dynamic Metadata & Tactile Resume Action Row
-                if (currentItem != null) {
-                    val badges = currentItem.badges
-                    val unreadCount = badges.unreadCount ?: 0L
-                    val canResume = onClickContinueReading != null && unreadCount > 0L
-
-                    val languageDisplayName = remember(badges.sourceLanguage, badges.isLocal) {
-                        if (badges.isLocal) {
-                            "Local"
-                        } else if (badges.sourceLanguage.isNotEmpty()) {
-                            try {
-                                val loc = java.util.Locale.forLanguageTag(badges.sourceLanguage)
-                                val name = loc.getDisplayLanguage(java.util.Locale.getDefault())
-                                if (name.isNotBlank()) name.replaceFirstChar { it.uppercase() } else badges.sourceLanguage.uppercase()
-                            } catch (_: Exception) {
-                                badges.sourceLanguage.uppercase()
-                            }
-                        } else {
-                            ""
-                        }
-                    }
-
-                    val statTextStyle = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        lineHeight = 17.sp,
-                        color = if (isDark) Color.White.copy(alpha = 0.88f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.88f),
-                        shadow = Shadow(
-                            color = if (isDark) Color.Black.copy(alpha = 0.70f) else Color.White.copy(alpha = 0.70f),
-                            blurRadius = 4f,
-                        ),
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // Stats placed directly on the background, stacked on top of each other (no boxes)
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                            horizontalAlignment = Alignment.Start,
-                        ) {
-                            if (badges.unreadCount != null) {
-                                Text(
-                                    text = "$unreadCount unread",
-                                    style = statTextStyle,
-                                )
-                            }
-                            if (badges.downloadCount != null) {
-                                Text(
-                                    text = "${badges.downloadCount} downloads",
-                                    style = statTextStyle,
-                                )
-                            }
-                            if (languageDisplayName.isNotEmpty()) {
-                                Text(
-                                    text = languageDisplayName,
-                                    style = statTextStyle,
-                                )
-                            }
-                        }
-
-                        // Tactile Primary Resume Button on the side - larger & easy to click
-                        if (canResume) {
-                            Surface(
-                                onClick = { onClickContinueReading(currentItem.libraryManga) },
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                shadowElevation = 4.dp,
-                                modifier = Modifier.height(48.dp),
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = MaterialSymbols.RoundedFilled.PlayArrow,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = stringResource(MR.strings.action_resume),
-                                        style = MaterialTheme.typography.labelLarge.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimary,
-                                            fontSize = 15.sp,
-                                        ),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Global search affordance when filter query is active
-                if (!searchQuery.isNullOrEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    GlobalSearchItem(
-                        searchQuery = searchQuery,
-                        onClick = onGlobalSearchClicked,
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                    )
-                }
-            }
-        }
+        AuroraShelfHud(
+            item = currentItem,
+            totalItems = items.size,
+            currentIndex = activeIndex,
+            onClickManga = onClickManga,
+            onClickContinueReading = onClickContinueReading,
+            contentPadding = contentPadding,
+            searchQuery = searchQuery,
+            onGlobalSearchClicked = onGlobalSearchClicked,
+            hudAlpha = hudAlpha * (1f - zoomIn * 0.65f),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }

@@ -7,6 +7,8 @@ import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
 import androidx.compose.animation.graphics.vector.AnimatedImageVector
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -27,6 +29,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.util.fastAll
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -40,6 +43,7 @@ import cafe.adriel.voyager.navigator.tab.TabOptions
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.library.components.AuroraModeSelectionDialog
+import eu.kanade.presentation.library.components.LibraryDisplayModePreviewScreen
 import eu.kanade.presentation.manga.components.MangaCoverCustomizationDialog
 import eu.kanade.presentation.components.LocalBottomBarPadding
 import eu.kanade.presentation.library.DeleteLibraryMangaDialog
@@ -171,7 +175,16 @@ data object LibraryTab : Tab {
                 )
             },
         ) { contentPadding ->
-            val adjustedPadding = remember(contentPadding) { contentPadding }
+            val bottomBarPadding = LocalBottomBarPadding.current
+            val layoutDirection = LocalLayoutDirection.current
+            val adjustedPadding = remember(contentPadding, bottomBarPadding, layoutDirection) {
+                PaddingValues(
+                    start = contentPadding.calculateStartPadding(layoutDirection),
+                    top = contentPadding.calculateTopPadding(),
+                    end = contentPadding.calculateEndPadding(layoutDirection),
+                    bottom = if (bottomBarPadding > 0.dp) bottomBarPadding else contentPadding.calculateBottomPadding(),
+                )
+            }
             when {
                 state.isLoading -> {
                     LoadingScreen(Modifier.padding(adjustedPadding))
@@ -260,6 +273,10 @@ data object LibraryTab : Tab {
                 onSelectMode = { newMode ->
                     viewModel.setDisplayMode(newMode)
                     showModeSelectionDialog = false
+                },
+                onOpenPreview = { previewMode ->
+                    showModeSelectionDialog = false
+                    navigator.push(LibraryDisplayModePreviewScreen(previewMode, state.libraryData.favorites))
                 },
                 onDismissRequest = { showModeSelectionDialog = false },
                 items = state.libraryData.favorites,

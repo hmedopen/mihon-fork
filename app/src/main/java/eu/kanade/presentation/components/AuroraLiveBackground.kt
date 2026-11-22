@@ -1,5 +1,7 @@
 package eu.kanade.presentation.components
 
+import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -26,13 +28,17 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import eu.kanade.domain.ui.model.LiveBackgroundMode
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Controller allowing child components (such as Coverflow) to dynamically provide
@@ -140,6 +146,50 @@ internal fun DrawScope.drawBackgroundForMode(
         LiveBackgroundMode.NEURAL_FLASH -> drawNeuralFlash(time, width, height, scrollOffset, isDark)
         LiveBackgroundMode.AURORA_BEAM -> drawAuroraBeam(time, width, height, scrollOffset, isDark)
         LiveBackgroundMode.PIXEL_RAIN -> drawPixelRain(time, width, height, scrollOffset, isDark)
+
+        // Gradient ASCII
+        LiveBackgroundMode.ASCII_HORIZON -> drawGradientAscii(time, width, height, scrollOffset, isDark, AsciiShape.HORIZON)
+        LiveBackgroundMode.ASCII_PINCH -> drawGradientAscii(time, width, height, scrollOffset, isDark, AsciiShape.PINCH)
+        LiveBackgroundMode.ASCII_RISE -> drawGradientAscii(time, width, height, scrollOffset, isDark, AsciiShape.RISE)
+        LiveBackgroundMode.ASCII_ECLIPSE -> drawGradientAscii(time, width, height, scrollOffset, isDark, AsciiShape.ECLIPSE)
+
+        // CRT Warp
+        LiveBackgroundMode.CRT_PURPLE -> drawCrtWarp(time, width, height, scrollOffset, isDark, CrtPreset.PURPLE)
+        LiveBackgroundMode.CRT_AMBER -> drawCrtWarp(time, width, height, scrollOffset, isDark, CrtPreset.AMBER)
+        LiveBackgroundMode.CRT_GREEN -> drawCrtWarp(time, width, height, scrollOffset, isDark, CrtPreset.GREEN)
+        LiveBackgroundMode.CRT_VINTAGE -> drawCrtWarp(time, width, height, scrollOffset, isDark, CrtPreset.VINTAGE)
+
+        // Light Tunnel
+        LiveBackgroundMode.LIGHT_TUNNEL_INWARD -> drawLightTunnel(time, width, height, scrollOffset, isDark, TunnelPreset.INWARD)
+        LiveBackgroundMode.LIGHT_TUNNEL_OUTWARD -> drawLightTunnel(time, width, height, scrollOffset, isDark, TunnelPreset.OUTWARD)
+        LiveBackgroundMode.LIGHT_TUNNEL_COSMOS -> drawLightTunnel(time, width, height, scrollOffset, isDark, TunnelPreset.COSMOS)
+
+        // Lightfall
+        LiveBackgroundMode.LIGHTFALL_SILVER -> drawLightfall(time, width, height, scrollOffset, isDark, LightfallPreset.SILVER)
+        LiveBackgroundMode.LIGHTFALL_VIOLET -> drawLightfall(time, width, height, scrollOffset, isDark, LightfallPreset.VIOLET)
+        LiveBackgroundMode.LIGHTFALL_SYNTHWAVE -> drawLightfall(time, width, height, scrollOffset, isDark, LightfallPreset.SYNTHWAVE)
+        LiveBackgroundMode.LIGHTFALL_EMERALD -> drawLightfall(time, width, height, scrollOffset, isDark, LightfallPreset.EMERALD)
+        LiveBackgroundMode.LIGHTFALL_EMBER -> drawLightfall(time, width, height, scrollOffset, isDark, LightfallPreset.EMBER)
+        LiveBackgroundMode.LIGHTFALL_HYPER -> drawLightfall(time, width, height, scrollOffset, isDark, LightfallPreset.HYPER)
+
+        // Antigravity
+        LiveBackgroundMode.ANTIGRAVITY -> drawAntigravity(time, width, height, scrollOffset, isDark)
+
+        // Light Rays
+        LiveBackgroundMode.LIGHT_RAYS_CYAN -> drawLightRays(time, width, height, scrollOffset, isDark, LightRaysPreset.CYAN)
+        LiveBackgroundMode.LIGHT_RAYS_ANGLED -> drawLightRays(time, width, height, scrollOffset, isDark, LightRaysPreset.ANGLED)
+
+        // Plasma Wave
+        LiveBackgroundMode.PLASMA_WAVE_NEON -> drawPlasmaWave(time, width, height, scrollOffset, isDark, PlasmaPreset.NEON)
+        LiveBackgroundMode.PLASMA_WAVE_SUNSET -> drawPlasmaWave(time, width, height, scrollOffset, isDark, PlasmaPreset.SUNSET)
+
+        // Pixel Snow
+        LiveBackgroundMode.PIXEL_SNOW -> drawPixelSnow(time, width, height, scrollOffset, isDark, accumulate = false)
+        LiveBackgroundMode.PIXEL_SNOW_ACCUMULATE -> drawPixelSnow(time, width, height, scrollOffset, isDark, accumulate = true)
+
+        // Faulty Terminal
+        LiveBackgroundMode.FAULTY_TERMINAL_MATRIX -> drawFaultyTerminal(time, width, height, scrollOffset, isDark, TerminalPreset.MATRIX)
+        LiveBackgroundMode.FAULTY_TERMINAL_BLOCKS -> drawFaultyTerminal(time, width, height, scrollOffset, isDark, TerminalPreset.BLOCKS)
     }
 }
 
@@ -1796,6 +1846,974 @@ private fun DrawScope.drawAeroShards(
                 center = Offset(width * 0.5f, height * 0.5f),
                 radius = maxDim * 0.72f,
             ),
+        )
+    }
+}
+
+// =========================================================================
+// 14. GRADIENT ASCII (React Bits)
+// Dynamic procedural ASCII character grid driven by geometric wavefronts
+// =========================================================================
+internal enum class AsciiShape { HORIZON, PINCH, RISE, ECLIPSE }
+
+private val ASCII_CHARS_HORIZON = " =+xX0S8#@".toCharArray()
+private val ASCII_CHARS_PINCH = " .:-=+*#%@".toCharArray()
+private val ASCII_CHARS_RISE = " =+xX0S8#@".toCharArray()
+private val ASCII_CHARS_ECLIPSE = " 01".toCharArray()
+
+private val ASCII_PAINT = ThreadLocal.withInitial {
+    Paint().apply {
+        isAntiAlias = true
+        typeface = Typeface.MONOSPACE
+        textAlign = Paint.Align.CENTER
+    }
+}
+
+private fun DrawScope.drawGradientAscii(
+    time: Float,
+    width: Float,
+    height: Float,
+    scrollOffset: Float,
+    isDark: Boolean,
+    shape: AsciiShape,
+) {
+    if (isDark) {
+        val bgVoid = when (shape) {
+            AsciiShape.HORIZON -> Color(0xFF070B18)
+            AsciiShape.PINCH -> Color(0xFF041210)
+            AsciiShape.RISE -> Color(0xFF140408)
+            AsciiShape.ECLIPSE -> Color(0xFF100902)
+        }
+        drawRect(color = bgVoid)
+    } else {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colorStops = LIGHT_MODE_BASE_GRADIENT.toTypedArray(),
+                startY = 0f,
+                endY = height,
+            ),
+        )
+    }
+
+    val (chars, cellSizeDp, colors) = when (shape) {
+        AsciiShape.HORIZON -> Triple(
+            ASCII_CHARS_HORIZON,
+            18.dp,
+            if (isDark) {
+                listOf(Color(0xFF1E3FD8), Color(0xFF38BDF8), Color(0xFFA5D8FF), Color(0xFFF6F8FF))
+            } else {
+                listOf(Color(0xFF1E3A8A), Color(0xFF0284C7), Color(0xFF0369A1), Color(0xFF075985))
+            },
+        )
+        AsciiShape.PINCH -> Triple(
+            ASCII_CHARS_PINCH,
+            16.dp,
+            if (isDark) {
+                listOf(Color(0xFF0D9488), Color(0xFF2DD4BF), Color(0xFF5EEAD4), Color(0xFFF0FDFA))
+            } else {
+                listOf(Color(0xFF0F766E), Color(0xFF14B8A6), Color(0xFF0D9488), Color(0xFF115E59))
+            },
+        )
+        AsciiShape.RISE -> Triple(
+            ASCII_CHARS_RISE,
+            22.dp,
+            if (isDark) {
+                listOf(Color(0xFF9F1239), Color(0xFFF43F5E), Color(0xFFFDA4AF), Color(0xFFFFF1F2))
+            } else {
+                listOf(Color(0xFF881337), Color(0xFFBE123C), Color(0xFFE11D48), Color(0xFF9F1239))
+            },
+        )
+        AsciiShape.ECLIPSE -> Triple(
+            ASCII_CHARS_ECLIPSE,
+            15.dp,
+            if (isDark) {
+                listOf(Color(0xFF78350F), Color(0xFFF59E0B), Color(0xFFFDE68A), Color(0xFFFFFBEB))
+            } else {
+                listOf(Color(0xFF78350F), Color(0xFFB45309), Color(0xFFD97706), Color(0xFF92400E))
+            },
+        )
+    }
+
+    val cellPx = max(cellSizeDp.toPx(), 14.dp.toPx())
+    val cols = (width / cellPx).toInt() + 1
+    val rows = (height / cellPx).toInt() + 1
+    val paint = ASCII_PAINT.get()!!
+    paint.textSize = cellPx * 0.85f
+
+    val nativeCanvas = drawContext.canvas.nativeCanvas
+    val charCount = chars.size
+
+    for (r in 0 until rows) {
+        val y = r * cellPx + cellPx * 0.75f
+        val ny = (y / height).coerceIn(0f, 1f)
+
+        for (c in 0 until cols) {
+            val x = c * cellPx + cellPx * 0.5f
+            val nx = (x / width).coerceIn(0f, 1f)
+
+            val intensity = when (shape) {
+                AsciiShape.HORIZON -> {
+                    val wave = sin(ny * 12f - time * 1.5f + scrollOffset * 2f) * cos((nx - 0.5f) * 6f) * 0.5f + 0.5f
+                    val horizonGrad = (1.0f - ny * 0.7f).coerceIn(0f, 1f)
+                    (wave * 0.55f + horizonGrad * 0.45f).coerceIn(0f, 1f)
+                }
+                AsciiShape.PINCH -> {
+                    val dx = (nx - 0.5f)
+                    val dy = (ny - 0.5f) * (height / width)
+                    val dist = sqrt(dx * dx + dy * dy)
+                    val angle = atan2(dy, dx)
+                    val pinch = sin(dist * 20f - time * 2.0f + sin(angle * 3f) * 0.7f) * 0.5f + 0.5f
+                    (pinch * (1.0f - dist * 0.9f)).coerceIn(0f, 1f)
+                }
+                AsciiShape.RISE -> {
+                    val wave1 = sin(nx * 10f + time * 1.2f + ny * 5f)
+                    val wave2 = cos(ny * 14f - time * 2.0f + nx * 7f)
+                    ((wave1 + wave2) * 0.25f + 0.5f).coerceIn(0f, 1f)
+                }
+                AsciiShape.ECLIPSE -> {
+                    val dx = (nx - 0.5f)
+                    val dy = (ny - 0.38f) * (height / width)
+                    val dist = sqrt(dx * dx + dy * dy)
+                    val ring = sin(dist * 24f - time * 1.8f) * 0.5f + 0.5f
+                    val orb = (1.0f - dist * 2.4f).coerceIn(0f, 1f)
+                    (orb * 0.6f + ring * 0.4f).coerceIn(0f, 1f)
+                }
+            }
+
+            if (intensity > 0.08f) {
+                val charIndex = (intensity * (charCount - 1)).toInt().coerceIn(0, charCount - 1)
+                val colorFrac = intensity * (colors.size - 1)
+                val cIdx1 = colorFrac.toInt().coerceIn(0, colors.size - 1)
+                val cIdx2 = (cIdx1 + 1).coerceIn(0, colors.size - 1)
+                val cT = colorFrac - cIdx1
+
+                val col1 = colors[cIdx1]
+                val col2 = colors[cIdx2]
+                val rColor = (col1.red + (col2.red - col1.red) * cT)
+                val gColor = (col1.green + (col2.green - col1.green) * cT)
+                val bColor = (col1.blue + (col2.blue - col1.blue) * cT)
+                val aColor = if (isDark) {
+                    (0.35f + intensity * 0.65f).coerceIn(0f, 1f)
+                } else {
+                    (0.55f + intensity * 0.45f).coerceIn(0f, 1f)
+                }
+
+                val argb = ((aColor * 255).toInt() shl 24) or
+                    ((rColor * 255).toInt() shl 16) or
+                    ((gColor * 255).toInt() shl 8) or
+                    (bColor * 255).toInt()
+
+                paint.color = argb
+                nativeCanvas.drawText(chars, charIndex, 1, x, y, paint)
+            }
+        }
+    }
+}
+
+// =========================================================================
+// 15. CRT WARP (React Bits)
+// Cathode-ray tube monitor with phosphor columns, scanlines, and curved dome
+// =========================================================================
+internal enum class CrtPreset { PURPLE, AMBER, GREEN, VINTAGE }
+
+private fun DrawScope.drawCrtWarp(
+    time: Float,
+    width: Float,
+    height: Float,
+    scrollOffset: Float,
+    isDark: Boolean,
+    preset: CrtPreset,
+) {
+    val (baseColor, bgDark, bgLight, columns, scanlineFreq) = when (preset) {
+        CrtPreset.PURPLE -> Quintuple(Color(0xFFC755F7), Color(0xFF120F17), Color(0xFFF3E8FF), 80, 240)
+        CrtPreset.AMBER -> Quintuple(Color(0xFFFFB000), Color(0xFF140F08), Color(0xFFFFFBEB), 96, 260)
+        CrtPreset.GREEN -> Quintuple(Color(0xFF3DFF7A), Color(0xFF08140B), Color(0xFFECFDF5), 64, 220)
+        CrtPreset.VINTAGE -> Quintuple(Color(0xFF93C5FD), Color(0xFF0A101C), Color(0xFFEFF6FF), 88, 240)
+    }
+
+    if (isDark) {
+        drawRect(color = bgDark)
+    } else {
+        drawRect(color = bgLight)
+    }
+
+    val crtBlend = if (isDark) BlendMode.Screen else BlendMode.SrcOver
+    val colWidth = width / columns
+
+    // 1. Equalizer / Phosphor columns
+    for (i in 0 until columns) {
+        val colCenter = i * colWidth + colWidth * 0.5f
+        val normCol = i.toFloat() / columns
+        val waveH = (sin(normCol * 12f + time * 1.8f) * cos(normCol * 6f - time * 0.9f) * 0.5f + 0.5f)
+        val colH = height * (0.20f + waveH * 0.65f)
+        val colTop = (height - colH) * 0.5f
+
+        val segHeight = 6.dp.toPx()
+        val segGap = 2.dp.toPx()
+        val totalSegs = (colH / (segHeight + segGap)).toInt()
+
+        for (s in 0 until totalSegs) {
+            val sy = colTop + s * (segHeight + segGap)
+            val segFrac = s.toFloat() / max(totalSegs, 1)
+            val segAlpha = (if (isDark) 0.15f else 0.25f) + 0.70f * (1.0f - abs(segFrac - 0.5f) * 1.4f).coerceIn(0f, 1f)
+
+            drawRect(
+                color = baseColor.copy(alpha = segAlpha.coerceIn(0f, 1f)),
+                topLeft = Offset(i * colWidth + 1.dp.toPx(), sy),
+                size = Size(colWidth - 2.dp.toPx(), segHeight),
+                blendMode = crtBlend,
+            )
+        }
+    }
+
+    // 2. Horizontal scanlines
+    val scanlineStep = (height / scanlineFreq).coerceAtLeast(2.5.dp.toPx())
+    val numScanlines = (height / scanlineStep).toInt()
+    for (s in 0 until numScanlines) {
+        val sy = s * scanlineStep
+        val lineAlpha = if (isDark) 0.18f else 0.08f
+        drawLine(
+            color = Color.Black.copy(alpha = lineAlpha),
+            start = Offset(0f, sy),
+            end = Offset(width, sy),
+            strokeWidth = scanlineStep * 0.45f,
+        )
+    }
+
+    // 3. Rolling vertical refresh bar
+    val rollY = ((time * 0.22f) % 1.0f) * height
+    val beamHeight = 48.dp.toPx()
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color.Transparent,
+                baseColor.copy(alpha = if (isDark) 0.16f else 0.22f),
+                Color.Transparent,
+            ),
+            startY = rollY - beamHeight,
+            endY = rollY + beamHeight,
+        ),
+        topLeft = Offset(0f, rollY - beamHeight),
+        size = Size(width, beamHeight * 2f),
+        blendMode = crtBlend,
+    )
+
+    // 4. CRT curvature vignette dome
+    val maxDim = max(width, height)
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                Color.Transparent,
+                Color.Black.copy(alpha = if (isDark) 0.65f else 0.20f),
+            ),
+            center = Offset(width * 0.5f, height * 0.5f),
+            radius = maxDim * 0.68f,
+        ),
+    )
+}
+
+private data class Quintuple<A, B, C, D, E>(val first: A, val second: B, val third: C, val fourth: D, val fifth: E)
+
+// =========================================================================
+// 16. LIGHT TUNNEL (React Bits)
+// High-speed 3D perspective warp tunnel with fiber optic cables & pulses
+// =========================================================================
+internal enum class TunnelPreset { INWARD, OUTWARD, COSMOS }
+
+private fun DrawScope.drawLightTunnel(
+    time: Float,
+    width: Float,
+    height: Float,
+    scrollOffset: Float,
+    isDark: Boolean,
+    preset: TunnelPreset,
+) {
+    if (isDark) {
+        val bg = if (preset == TunnelPreset.COSMOS) Color(0xFF030716) else Color(0xFF050508)
+        drawRect(color = bg)
+    } else {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colorStops = LIGHT_MODE_BASE_GRADIENT.toTypedArray(),
+                startY = 0f,
+                endY = height,
+            ),
+        )
+    }
+
+    val (cableCount, direction, swayAmp, cableColor, pulseColor) = when (preset) {
+        TunnelPreset.INWARD -> Quintuple(56, -1, 0.20f, Color.White, Color(0xFF60A5FA))
+        TunnelPreset.OUTWARD -> Quintuple(56, 1, 0.35f, Color.White, Color(0xFFA855F7))
+        TunnelPreset.COSMOS -> Quintuple(72, -1, 0.75f, Color(0xFFCFE0FF), Color(0xFF9AB8FF))
+    }
+
+    val tunnelBlend = if (isDark) BlendMode.Screen else BlendMode.SrcOver
+    val maxRadius = sqrt(width * width + height * height) * 0.55f
+
+    // Vanishing point with organic sway
+    val cx = width * 0.5f + sin(time * 0.8f) * (width * 0.12f * swayAmp) + scrollOffset * 25f
+    val cy = height * 0.44f + cos(time * 0.6f) * (height * 0.08f * swayAmp)
+
+    // 1. Concentric tunnel depth rings
+    val ringCount = 12
+    for (r in 0 until ringCount) {
+        val rawZ = if (direction == -1) {
+            (1.0f - ((time * 0.6f + r.toFloat() / ringCount) % 1.0f))
+        } else {
+            ((time * 0.8f + r.toFloat() / ringCount) % 1.0f)
+        }
+        val depthRadius = (rawZ * rawZ) * maxRadius
+        val ringAlpha = (sin(rawZ * PI.toFloat()) * (if (isDark) 0.22f else 0.30f)).coerceIn(0f, 1f)
+
+        if (depthRadius > 4.dp.toPx()) {
+            drawCircle(
+                color = cableColor.copy(alpha = ringAlpha),
+                radius = depthRadius,
+                center = Offset(cx, cy),
+                style = Stroke(width = (0.8f + rawZ * 1.5f).dp.toPx()),
+                blendMode = tunnelBlend,
+            )
+        }
+    }
+
+    // 2. Radial fiber cables & travelling data packet pulses
+    val angleStep = (2 * PI / cableCount).toFloat()
+    for (c in 0 until cableCount) {
+        val angle = c * angleStep + sin(time * 0.3f + c * 0.1f) * 0.05f
+        val cosA = cos(angle)
+        val sinA = sin(angle)
+
+        val endX = cx + cosA * maxRadius
+        val endY = cy + sinA * maxRadius
+
+        val cableAlpha = if (isDark) 0.12f else 0.16f
+        drawLine(
+            color = cableColor.copy(alpha = cableAlpha),
+            start = Offset(cx, cy),
+            end = Offset(endX, endY),
+            strokeWidth = 0.8.dp.toPx(),
+            blendMode = tunnelBlend,
+        )
+
+        // 2 traveling pulses along this cable
+        for (p in 0..1) {
+            val pulseT = if (direction == -1) {
+                (1.0f - ((time * 1.2f + c * 0.06f + p * 0.5f) % 1.0f))
+            } else {
+                ((time * 1.4f + c * 0.06f + p * 0.5f) % 1.0f)
+            }
+            val pulseDist = (pulseT * pulseT) * maxRadius
+            val px = cx + cosA * pulseDist
+            val py = cy + sinA * pulseDist
+
+            val pulseAlpha = (sin(pulseT * PI.toFloat()) * (if (isDark) 0.85f else 0.75f)).coerceIn(0f, 1f)
+            val pSize = (1.5f + pulseT * 3.5f).dp.toPx()
+
+            drawCircle(
+                color = pulseColor.copy(alpha = pulseAlpha),
+                radius = pSize,
+                center = Offset(px, py),
+                blendMode = tunnelBlend,
+            )
+        }
+    }
+
+    // Vanishing core glow
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                (if (isDark) Color.White else pulseColor).copy(alpha = if (isDark) 0.40f else 0.30f),
+                Color.Transparent,
+            ),
+            center = Offset(cx, cy),
+            radius = 36.dp.toPx(),
+        ),
+        radius = 36.dp.toPx(),
+        center = Offset(cx, cy),
+        blendMode = tunnelBlend,
+    )
+}
+
+// =========================================================================
+// 17. LIGHTFALL (React Bits)
+// Cascading starlight comets with glowing heads, luminous tails, and twinkle
+// =========================================================================
+internal enum class LightfallPreset { SILVER, VIOLET, SYNTHWAVE, EMERALD, EMBER, HYPER }
+
+private data class LightfallStreak(
+    val seedX: Float,
+    val seedY: Float,
+    val speedFactor: Float,
+    val lengthDp: Float,
+    val widthDp: Float,
+    val depth: Float,
+    val colorIndex: Int,
+)
+
+private val LIGHTFALL_STREAKS = Array(44) { i ->
+    val rand = java.util.Random(i.toLong() * 92837L)
+    LightfallStreak(
+        seedX = rand.nextFloat(),
+        seedY = rand.nextFloat(),
+        speedFactor = 0.55f + rand.nextFloat() * 0.75f,
+        lengthDp = 80f + rand.nextFloat() * 140f,
+        widthDp = 1.2f + rand.nextFloat() * 1.6f,
+        depth = 0.35f + rand.nextFloat() * 0.65f,
+        colorIndex = i % 3,
+    )
+}
+
+private fun DrawScope.drawLightfall(
+    time: Float,
+    width: Float,
+    height: Float,
+    scrollOffset: Float,
+    isDark: Boolean,
+    preset: LightfallPreset,
+) {
+    val (bgTop, bgBottom, colors, globalSpeed) = when (preset) {
+        LightfallPreset.SILVER -> Quad(Color(0xFF64748B), Color(0xFF1E293B), listOf(Color.White, Color(0xFFCBD5E1), Color(0xFFF1F5F9)), 0.65f)
+        LightfallPreset.VIOLET -> Quad(Color(0xFF4338CA), Color(0xFF1E1B4B), listOf(Color.White, Color(0xFFC4D0FF), Color(0xFF8B7BFF)), 0.85f)
+        LightfallPreset.SYNTHWAVE -> Quad(Color(0xFF1E1B4B), Color(0xFF030014), listOf(Color(0xFFA6C8FF), Color(0xFF5227FF), Color(0xFFFF9FFC)), 0.90f)
+        LightfallPreset.EMERALD -> Quad(Color(0xFF065F46), Color(0xFF022C22), listOf(Color(0xFFECFDF5), Color(0xFF6EE7B7), Color(0xFF22D3EE)), 0.75f)
+        LightfallPreset.EMBER -> Quad(Color(0xFF9A3412), Color(0xFF431407), listOf(Color(0xFFFFF4E6), Color(0xFFFFB067), Color(0xFFFF5A36)), 0.75f)
+        LightfallPreset.HYPER -> Quad(Color(0xFF1D4ED8), Color(0xFF0F172A), listOf(Color.White, Color(0xFFBFDBFE), Color(0xFF60A5FA)), 1.50f)
+    }
+
+    if (isDark) {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(bgTop.copy(alpha = 0.75f), bgBottom),
+                startY = 0f,
+                endY = height,
+            ),
+        )
+    } else {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colorStops = LIGHT_MODE_BASE_GRADIENT.toTypedArray(),
+                startY = 0f,
+                endY = height,
+            ),
+        )
+    }
+
+    val lightfallBlend = if (isDark) BlendMode.Screen else BlendMode.SrcOver
+
+    // Cascading starlight streaks
+    for (streak in LIGHTFALL_STREAKS) {
+        val totalTravel = (streak.seedY + time * globalSpeed * streak.speedFactor * 0.18f) % 1.25f - 0.15f
+        val headY = totalTravel * height
+        val tailLen = streak.lengthDp.dp.toPx()
+        val tailTopY = headY - tailLen
+
+        val x = (streak.seedX * width + scrollOffset * 30f * streak.depth) % width
+        val col = colors[streak.colorIndex % colors.size]
+
+        val alpha = if (isDark) {
+            (0.35f + 0.65f * streak.depth).coerceIn(0f, 1f)
+        } else {
+            (0.55f + 0.45f * streak.depth).coerceIn(0f, 1f)
+        }
+
+        // Tapering gradient tail
+        drawLine(
+            brush = Brush.verticalGradient(
+                colors = listOf(Color.Transparent, col.copy(alpha = alpha)),
+                startY = tailTopY,
+                endY = headY,
+            ),
+            start = Offset(x, tailTopY),
+            end = Offset(x, headY),
+            strokeWidth = streak.widthDp.dp.toPx(),
+            blendMode = lightfallBlend,
+        )
+
+        // Glowing comet head
+        drawCircle(
+            color = (if (isDark) Color.White else col).copy(alpha = alpha),
+            radius = streak.widthDp.dp.toPx() * 1.4f,
+            center = Offset(x, headY),
+            blendMode = lightfallBlend,
+        )
+    }
+}
+
+private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
+// =========================================================================
+// 18. ANTIGRAVITY (React Bits)
+// 360 ethereal micro-particles suspended in zero-g, orbiting magnetic toruses
+// =========================================================================
+private data class AntigravityParticle(
+    val baseAngle: Float,
+    val baseRadiusFrac: Float,
+    val waveAmp: Float,
+    val phase: Float,
+    val depth: Float,
+    val sizeDp: Float,
+    val colorIdx: Int,
+)
+
+private val ANTIGRAVITY_PARTICLES = Array(320) { i ->
+    val rand = java.util.Random(i.toLong() * 83726L)
+    AntigravityParticle(
+        baseAngle = rand.nextFloat() * 2f * PI.toFloat(),
+        baseRadiusFrac = 0.15f + rand.nextFloat() * 0.75f,
+        waveAmp = 0.4f + rand.nextFloat() * 0.6f,
+        phase = rand.nextFloat() * 2f * PI.toFloat(),
+        depth = 0.3f + rand.nextFloat() * 0.7f,
+        sizeDp = 1.0f + rand.nextFloat() * 2.2f,
+        colorIdx = i % 3,
+    )
+}
+
+private fun DrawScope.drawAntigravity(
+    time: Float,
+    width: Float,
+    height: Float,
+    scrollOffset: Float,
+    isDark: Boolean,
+) {
+    if (isDark) {
+        drawRect(color = Color(0xFF030712))
+    } else {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colorStops = LIGHT_MODE_BASE_GRADIENT.toTypedArray(),
+                startY = 0f,
+                endY = height,
+            ),
+        )
+    }
+
+    val agBlend = if (isDark) BlendMode.Screen else BlendMode.SrcOver
+    val cx = width * 0.5f + scrollOffset * 25f
+    val cy = height * 0.46f
+    val maxRadius = width * 0.48f
+
+    val colors = if (isDark) {
+        listOf(Color(0xFF7DD3FC), Color(0xFFE0F2FE), Color(0xFF38BDF8))
+    } else {
+        listOf(Color(0xFF0284C7), Color(0xFF0369A1), Color(0xFF0C4A6E))
+    }
+
+    // 1. Magnetic orbital guide rings
+    val ringR1 = maxRadius * 0.38f
+    val ringR2 = maxRadius * 0.70f
+    val ringR3 = maxRadius * 0.95f
+    val ringAlpha = if (isDark) 0.08f else 0.12f
+
+    drawCircle(
+        color = colors[0].copy(alpha = ringAlpha),
+        radius = ringR1,
+        center = Offset(cx, cy),
+        style = Stroke(width = 1.dp.toPx()),
+        blendMode = agBlend,
+    )
+    drawCircle(
+        color = colors[2].copy(alpha = ringAlpha),
+        radius = ringR2,
+        center = Offset(cx, cy),
+        style = Stroke(width = 1.dp.toPx()),
+        blendMode = agBlend,
+    )
+    drawCircle(
+        color = colors[1].copy(alpha = ringAlpha * 0.7f),
+        radius = ringR3,
+        center = Offset(cx, cy),
+        style = Stroke(width = 1.dp.toPx()),
+        blendMode = agBlend,
+    )
+
+    // 2. Swirling zero-g harmonic particles
+    for (p in ANTIGRAVITY_PARTICLES) {
+        val angle = p.baseAngle + time * 0.75f * (0.6f + p.depth * 0.4f)
+        val radius = (p.baseRadiusFrac * maxRadius) + sin(time * 2.2f + p.phase) * (p.waveAmp * 18.dp.toPx())
+
+        val px = cx + cos(angle) * radius * 1.05f
+        val py = cy + sin(angle) * radius * 0.72f + sin(time * 1.2f + p.baseAngle * 2f) * 14.dp.toPx()
+
+        val pAlpha = (if (isDark) 0.30f else 0.50f) + 0.50f * p.depth
+        val pCol = colors[p.colorIdx]
+
+        drawCircle(
+            color = pCol.copy(alpha = pAlpha.coerceIn(0f, 1f)),
+            radius = p.sizeDp.dp.toPx(),
+            center = Offset(px, py),
+            blendMode = agBlend,
+        )
+    }
+
+    // Central magnetic core glow
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                colors[0].copy(alpha = if (isDark) 0.25f else 0.18f),
+                Color.Transparent,
+            ),
+            center = Offset(cx, cy),
+            radius = 60.dp.toPx(),
+        ),
+        radius = 60.dp.toPx(),
+        center = Offset(cx, cy),
+        blendMode = agBlend,
+    )
+}
+
+// =========================================================================
+// 19. LIGHT RAYS (React Bits)
+// Volumetric crepuscular light rays piercing through atmospheric haze
+// =========================================================================
+internal enum class LightRaysPreset { CYAN, ANGLED }
+
+private val RAY_PATH = ThreadLocal.withInitial { Path() }
+
+private fun DrawScope.drawLightRays(
+    time: Float,
+    width: Float,
+    height: Float,
+    scrollOffset: Float,
+    isDark: Boolean,
+    preset: LightRaysPreset,
+) {
+    if (isDark) {
+        val bgVoid = if (preset == LightRaysPreset.CYAN) Color(0xFF050E18) else Color(0xFF08080C)
+        drawRect(color = bgVoid)
+    } else {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colorStops = LIGHT_MODE_BASE_GRADIENT.toTypedArray(),
+                startY = 0f,
+                endY = height,
+            ),
+        )
+    }
+
+    val (ox, oy, rayCount, rayColor) = when (preset) {
+        LightRaysPreset.CYAN -> Quad(width * 0.5f + scrollOffset * 20f, -30.dp.toPx(), 20, Color(0xFF7FE3FF))
+        LightRaysPreset.ANGLED -> Quad(width * 0.85f + scrollOffset * 20f, -40.dp.toPx(), 22, Color.White)
+    }
+
+    val rayBlend = if (isDark) BlendMode.Screen else BlendMode.SrcOver
+    val rayPath = RAY_PATH.get()!!
+
+    val totalSpread = width * 1.5f
+    val baseStartX = ox - totalSpread * 0.5f
+    val step = totalSpread / rayCount
+
+    for (i in 0 until rayCount) {
+        val sweepSway = sin(time * 0.6f + i * 0.7f) * 16.dp.toPx()
+        val bottomCenter = baseStartX + i * step + sweepSway
+        val beamWidth = 24.dp.toPx() + sin(time * 1.1f + i * 1.2f) * 12.dp.toPx()
+
+        val bLeft = bottomCenter - beamWidth * 0.5f
+        val bRight = bottomCenter + beamWidth * 0.5f
+
+        val alpha = (sin(i * 0.85f + time * 1.2f) * cos(i * 1.3f - time * 0.7f) * 0.5f + 0.5f) *
+            (if (isDark) 0.18f else 0.24f)
+
+        rayPath.reset()
+        rayPath.moveTo(ox, oy)
+        rayPath.lineTo(bLeft, height + 40.dp.toPx())
+        rayPath.lineTo(bRight, height + 40.dp.toPx())
+        rayPath.close()
+
+        drawPath(
+            path = rayPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    rayColor.copy(alpha = alpha * 1.8f),
+                    rayColor.copy(alpha = alpha * 0.3f),
+                    Color.Transparent,
+                ),
+                startY = oy,
+                endY = height,
+            ),
+            blendMode = rayBlend,
+        )
+    }
+
+    // Atmospheric source haze
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                rayColor.copy(alpha = if (isDark) 0.35f else 0.25f),
+                Color.Transparent,
+            ),
+            center = Offset(ox, oy),
+            radius = width * 0.55f,
+        ),
+        radius = width * 0.55f,
+        center = Offset(ox, oy),
+        blendMode = rayBlend,
+    )
+}
+
+// =========================================================================
+// 20. PLASMA WAVE (React Bits)
+// Ionized plasma filaments curving with harmonic sinusoidal bends and glow
+// =========================================================================
+internal enum class PlasmaPreset { NEON, SUNSET }
+
+private val PLASMA_PATH = ThreadLocal.withInitial { Path() }
+
+private fun DrawScope.drawPlasmaWave(
+    time: Float,
+    width: Float,
+    height: Float,
+    scrollOffset: Float,
+    isDark: Boolean,
+    preset: PlasmaPreset,
+) {
+    if (isDark) {
+        val bgVoid = if (preset == PlasmaPreset.NEON) Color(0xFF090414) else Color(0xFF140509)
+        drawRect(color = bgVoid)
+    } else {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colorStops = LIGHT_MODE_BASE_GRADIENT.toTypedArray(),
+                startY = 0f,
+                endY = height,
+            ),
+        )
+    }
+
+    val (col1, col2) = when (preset) {
+        PlasmaPreset.NEON -> Pair(Color(0xFFA855F7), Color(0xFF06B6D4))
+        PlasmaPreset.SUNSET -> Pair(Color(0xFFFF8A3D), Color(0xFFFF2D6F))
+    }
+
+    val plasmaBlend = if (isDark) BlendMode.Screen else BlendMode.SrcOver
+    val path = PLASMA_PATH.get()!!
+    val ribbonCount = 5
+    val steps = 36
+    val dx = width / steps
+
+    for (r in 0 until ribbonCount) {
+        val phase = r * (PI.toFloat() / ribbonCount)
+        val baseY = height * (0.30f + r * 0.10f) + scrollOffset * 20f
+        val colorFrac = r.toFloat() / (ribbonCount - 1)
+        val ribbonColor = if (colorFrac < 0.5f) col1 else col2
+
+        path.reset()
+        for (i in 0..steps) {
+            val x = i * dx
+            val normX = i.toFloat() / steps
+            val bend1 = sin(normX * 6f + time * 1.5f + phase) * 45.dp.toPx()
+            val bend2 = cos(normX * 10f - time * 2.0f + phase * 1.5f) * 25.dp.toPx()
+            val y = baseY + bend1 + bend2
+
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+
+        // 1. Broad outer glow sheath
+        drawPath(
+            path = path,
+            color = ribbonColor.copy(alpha = if (isDark) 0.15f else 0.22f),
+            style = Stroke(width = 22.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+            blendMode = plasmaBlend,
+        )
+
+        // 2. High-intensity luminous core
+        drawPath(
+            path = path,
+            color = (if (isDark) Color.White else ribbonColor).copy(alpha = if (isDark) 0.80f else 0.70f),
+            style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+            blendMode = plasmaBlend,
+        )
+    }
+}
+
+// =========================================================================
+// 21. PIXEL SNOW (React Bits)
+// Retro pixelated 8-bit snowflakes drifting in the wind with snowdrift accumulation
+// =========================================================================
+private data class PixelSnowflake(
+    val seedX: Float,
+    val seedY: Float,
+    val sizeDp: Float,
+    val speed: Float,
+    val windPhase: Float,
+)
+
+private val PIXEL_SNOW_FLAKES = Array(88) { i ->
+    val rand = java.util.Random(i.toLong() * 63721L)
+    PixelSnowflake(
+        seedX = rand.nextFloat(),
+        seedY = rand.nextFloat(),
+        sizeDp = 2.5f + rand.nextFloat() * 3.5f,
+        speed = 0.65f + rand.nextFloat() * 0.70f,
+        windPhase = rand.nextFloat() * 2f * PI.toFloat(),
+    )
+}
+
+private fun DrawScope.drawPixelSnow(
+    time: Float,
+    width: Float,
+    height: Float,
+    scrollOffset: Float,
+    isDark: Boolean,
+    accumulate: Boolean,
+) {
+    if (isDark) {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(Color(0xFF0F172A), Color(0xFF020617)),
+                startY = 0f,
+                endY = height,
+            ),
+        )
+    } else {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colorStops = LIGHT_MODE_BASE_GRADIENT.toTypedArray(),
+                startY = 0f,
+                endY = height,
+            ),
+        )
+    }
+
+    val snowBlend = if (isDark) BlendMode.Screen else BlendMode.SrcOver
+    val flakeColor = if (isDark) Color.White else Color(0xFF38BDF8)
+
+    // 1. Falling pixelated snowflakes
+    for (flake in PIXEL_SNOW_FLAKES) {
+        val y = ((flake.seedY * height + time * flake.speed * 45.dp.toPx()) % (height + 20.dp.toPx())) - 10.dp.toPx()
+        val windSway = sin(time * 1.2f + flake.windPhase) * 16.dp.toPx()
+        val x = (flake.seedX * width + time * 12.dp.toPx() + windSway + scrollOffset * 25f) % width
+
+        val pSize = flake.sizeDp.dp.toPx()
+        val alpha = if (isDark) 0.85f else 0.75f
+
+        // 8-bit cross pixel glyph
+        drawRect(
+            color = flakeColor.copy(alpha = alpha),
+            topLeft = Offset(x, y),
+            size = Size(pSize, pSize),
+            blendMode = snowBlend,
+        )
+        drawRect(
+            color = flakeColor.copy(alpha = alpha * 0.5f),
+            topLeft = Offset(x - pSize * 0.6f, y),
+            size = Size(pSize * 0.6f, pSize),
+            blendMode = snowBlend,
+        )
+        drawRect(
+            color = flakeColor.copy(alpha = alpha * 0.5f),
+            topLeft = Offset(x + pSize, y),
+            size = Size(pSize * 0.6f, pSize),
+            blendMode = snowBlend,
+        )
+    }
+
+    // 2. Pixel snowdrift accumulation along bottom edge
+    if (accumulate) {
+        val driftCols = 40
+        val colW = width / driftCols
+        val baseH = 20.dp.toPx()
+
+        for (c in 0 until driftCols) {
+            val cx = c * colW
+            val driftH = baseH + sin(c * 0.28f) * 6.dp.toPx() + cos(c * 0.45f) * 4.dp.toPx()
+            drawRect(
+                color = flakeColor.copy(alpha = if (isDark) 0.50f else 0.45f),
+                topLeft = Offset(cx, height - driftH),
+                size = Size(colW + 1f, driftH),
+                blendMode = snowBlend,
+            )
+        }
+    }
+}
+
+// =========================================================================
+// 22. FAULTY TERMINAL (React Bits)
+// Malfunctioning mainframe terminal with matrix code, block glyphs, and glitch tears
+// =========================================================================
+internal enum class TerminalPreset { MATRIX, BLOCKS }
+
+private val TERMINAL_CHARS_MATRIX = "0123456789ABCDEF<>/*+-#".toCharArray()
+private val TERMINAL_CHARS_BLOCKS = "█▓▒░▄▀■ ".toCharArray()
+
+private val TERMINAL_PAINT = ThreadLocal.withInitial {
+    Paint().apply {
+        isAntiAlias = true
+        typeface = Typeface.MONOSPACE
+        textAlign = Paint.Align.CENTER
+    }
+}
+
+private fun DrawScope.drawFaultyTerminal(
+    time: Float,
+    width: Float,
+    height: Float,
+    scrollOffset: Float,
+    isDark: Boolean,
+    preset: TerminalPreset,
+) {
+    val (tintColor, bgDark, bgLight, chars, cellDp) = when (preset) {
+        TerminalPreset.MATRIX -> Quintuple(Color(0xFFB8F5A8), Color(0xFF041206), Color(0xFFF0FDF4), TERMINAL_CHARS_MATRIX, 15.dp)
+        TerminalPreset.BLOCKS -> Quintuple(Color(0xFF7DD3FC), Color(0xFF040E18), Color(0xFFF0F9FF), TERMINAL_CHARS_BLOCKS, 20.dp)
+    }
+
+    if (isDark) {
+        drawRect(color = bgDark)
+    } else {
+        drawRect(color = bgLight)
+    }
+
+    val cellPx = max(cellDp.toPx(), 14.dp.toPx())
+    val cols = (width / cellPx).toInt() + 1
+    val rows = (height / cellPx).toInt() + 1
+    val paint = TERMINAL_PAINT.get()!!
+    paint.textSize = cellPx * 0.9f
+
+    val nativeCanvas = drawContext.canvas.nativeCanvas
+    val charCount = chars.size
+
+    // Periodic horizontal glitch tear
+    val isGlitch = sin(time * 4f) > 0.88f
+    val glitchRow = if (isGlitch) ((time * 7f).toInt() % rows) else -1
+    val glitchShift = if (isGlitch) 18.dp.toPx() else 0f
+
+    for (r in 0 until rows) {
+        val shiftX = if (r == glitchRow || r == glitchRow + 1) glitchShift else 0f
+        val y = r * cellPx + cellPx * 0.8f
+
+        for (c in 0 until cols) {
+            val x = c * cellPx + cellPx * 0.5f + shiftX
+
+            val seed = (r * 31 + c * 17)
+            val flicker = sin(time * 8f + seed) * 0.5f + 0.5f
+            if (flicker > 0.35f) {
+                val charIdx = ((seed + (time * 3f).toInt()) % charCount).let { if (it < 0) it + charCount else it }
+                val alpha = if (isDark) {
+                    (0.35f + flicker * 0.65f).coerceIn(0f, 1f)
+                } else {
+                    (0.50f + flicker * 0.50f).coerceIn(0f, 1f)
+                }
+
+                val argb = ((alpha * 255).toInt() shl 24) or
+                    ((tintColor.red * 255).toInt() shl 16) or
+                    ((tintColor.green * 255).toInt() shl 8) or
+                    (tintColor.blue * 255).toInt()
+
+                paint.color = argb
+                nativeCanvas.drawText(chars, charIdx, 1, x, y, paint)
+            }
+        }
+    }
+
+    // Scanlines
+    val scanStep = 4.dp.toPx()
+    val numLines = (height / scanStep).toInt()
+    for (s in 0 until numLines) {
+        val sy = s * scanStep
+        drawLine(
+            color = Color.Black.copy(alpha = if (isDark) 0.12f else 0.05f),
+            start = Offset(0f, sy),
+            end = Offset(width, sy),
+            strokeWidth = 1.dp.toPx(),
         )
     }
 }

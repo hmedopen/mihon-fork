@@ -137,6 +137,8 @@ fun BrowseSourceContent(
         LibraryDisplayMode.CompactGrid,
         LibraryDisplayMode.CoverOnlyGrid,
         LibraryDisplayMode.Coverflow,
+        LibraryDisplayMode.CarouselRing,
+        LibraryDisplayMode.AlphabeticRail,
         -> {
             BrowseSourceCompactGrid(
                 mangaList = mangaList,

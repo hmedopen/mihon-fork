@@ -22,7 +22,9 @@ import eu.kanade.presentation.more.settings.screen.appearance.AppLanguageScreen
 import eu.kanade.presentation.more.settings.screen.appearance.LiveBackgroundPreviewScreen
 import eu.kanade.presentation.more.settings.widget.AppThemeModePreferenceWidget
 import eu.kanade.presentation.more.settings.widget.AppThemePreferenceWidget
+import eu.kanade.presentation.more.settings.widget.DisplayModePreferenceWidget
 import eu.kanade.presentation.more.settings.widget.LiveBackgroundPreferenceWidget
+import eu.kanade.presentation.library.components.LibraryDisplayModePreviewScreen
 import eu.kanade.presentation.util.rememberIs24HourSystem
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.datetime.TimeZone
@@ -100,12 +102,28 @@ object SettingsAppearanceScreen : SearchableSettings {
                 Preference.PreferenceItem.CustomPreference(
                     title = stringResource(MR.strings.pref_live_background),
                 ) {
-                    val liveBackgroundMode by uiPreferences.liveBackgroundMode.collectAsState()
+                    val liveBackgroundMode by uiPreferences.liveBackgroundMode().collectAsState()
                     val navigator = LocalNavigator.currentOrThrow
                     LiveBackgroundPreferenceWidget(
                         currentMode = liveBackgroundMode,
                         onItemClick = { mode ->
                             navigator.push(LiveBackgroundPreviewScreen(mode))
+                        },
+                    )
+                },
+                Preference.PreferenceItem.CustomPreference(
+                    title = stringResource(MR.strings.action_display_mode),
+                ) {
+                    val libraryPreferences = remember { context.appGraph.libraryPreferences }
+                    val displayMode by libraryPreferences.displayMode.collectAsState()
+                    val liveBackgroundMode by uiPreferences.liveBackgroundMode().collectAsState()
+                    val navigator = LocalNavigator.currentOrThrow
+                    DisplayModePreferenceWidget(
+                        currentMode = displayMode,
+                        liveBackgroundMode = liveBackgroundMode,
+                        onItemClick = { mode ->
+                            libraryPreferences.displayMode.set(mode)
+                            navigator.push(LibraryDisplayModePreviewScreen(mode))
                         },
                     )
                 },

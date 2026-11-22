@@ -110,6 +110,7 @@ fun TabbedScreen(
                 FoxTopSectionBar(
                     tabs = foxTabs,
                     selectedIndex = state.currentPage,
+                    positionProvider = { state.currentPage + state.currentPageOffsetFraction },
                     onTabSelected = { index ->
                         scope.launch { state.animateScrollToPage(index) }
                     },
